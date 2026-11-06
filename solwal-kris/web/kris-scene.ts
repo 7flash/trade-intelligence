@@ -23,7 +23,7 @@ export const spot = (r: Rect, fx: number, fy: number, scale: number) => ({ x: (r
 export const newEvents = (list: SceneEvent[], seen: Set<string>) => list.filter(e => !seen.has(e.id) && e.kind !== "decision").sort((a, b) => a.atMs - b.atMs);
 
 /** Only what Kris does moves the cursor. New coins stay in the history: there are too many to act out. */
-export const keepEvent = (e: SceneEvent, queued: number) => e.kind !== "coin" && e.kind !== "migrated" && queued < 4;
+export const keepEvent = (e: SceneEvent, queued: number) => e.kind !== "coin" && e.kind !== "migrated" && e.kind !== "browse" && queued < 4;
 
 /** Each animation and what it says, shown together so the two always match. */
 export const REACTIONS: Record<string, { label: string; tone: string }> = {

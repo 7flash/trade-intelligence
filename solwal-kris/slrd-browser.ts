@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { pickCoin, remember, TOUR } from "./tui/pump-tour.ts";
+import { pickCoin, remember, safeFacts, safeName, TOUR, trendingRow, type TourStop } from "./tui/pump-tour.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
 const bridgeToken = readFileSync(resolve(dot, "bridge-token"), "utf8").trim();
@@ -59,13 +59,27 @@ async function visit() {
   const href = pickCoin(stop, hrefs, recent);
   if (!href) return visit();
   recent = remember(recent, href);
+  posted = stop === "callout" ? await value(`(() => { let e = [...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)}); while (e && e.innerText.length < 80) e = e.parentElement; return e ? e.innerText : ""; })()`) ?? "" : "";
   if (await click(href)) log(`${stop}: ${href}`);
+}
+/** What this stop shows, for Kris to think about: see safeFacts for why it is only numbers and names. */
+let posted = "";
+async function read(stop: TourStop) {
+  const seen = JSON.parse(await value(`JSON.stringify({ title: document.title, path: location.pathname, text: document.body.innerText, coins: [...document.querySelectorAll('a[href^="/coin/"]')].filter(a => !a.getAttribute("href").includes("highlight_callout")).slice(0, 6).map(a => a.innerText) })`) ?? "null") as { title: string; path: string; text: string; coins: string[] } | null;
+  if (!seen || blocked(seen.title)) return;
+  const coin = /^\/coin\//.test(seen.path), at = seen.text.indexOf("Market cap");
+  writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: Date.now(), stop, mint: coin ? seen.path.slice(6) : "",
+    coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
+    facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
+    callout: stop === "callout" ? safeFacts(posted, 10) : [] }));
 }
 setInterval(async () => {
   if (wasBlocked) return;
   const trade = await latestTrade();
   if (trade && trade.at > lastTrade) { lastTrade = trade.at; recent = remember(recent, `/coin/${trade.mint}`); return go(coinPage(trade.mint)); }
+  const stop = TOUR[step % TOUR.length]!;
   await visit();
+  setTimeout(() => { if (!wasBlocked) void read(stop).catch(e => log(`read: ${String(e).slice(0, 80)}`)); }, STOP_MS * 0.4);
   setTimeout(() => { if (!wasBlocked) void scroll(); }, STOP_MS / 2);
 }, STOP_MS);
 

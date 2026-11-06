@@ -169,7 +169,7 @@ export default function mount() {
     if (d?.type === "solard:ready") { ready = true; void drain(); }
     if (d?.type === "solard:at" && d.id != null) { replies.get(d.id)?.({ row: d.row ?? null, range: d.range ?? null, chart: d.chart ?? null, target: d.target ?? null }); replies.delete(d.id); }
   };
-  const onClick = (e: Event) => { const b = (e.target as HTMLElement).closest("[data-mint]") as HTMLElement | null; if (b) { handsOffUntil = Date.now() + 30_000; void ask("solard:open", { mint: b.dataset.mint! }); } };
+  const onClick = (e: Event) => { const b = (e.target as HTMLElement).closest("[data-mint]") as HTMLElement | null; if (b?.dataset.mint) { handsOffUntil = Date.now() + 30_000; void ask("solard:open", { mint: b.dataset.mint! }); } };
   const hands = () => { handsOffUntil = Date.now() + 30_000; };
   void showBrowser(); const browserTimer = setInterval(() => void showBrowser(), 2_000);
   new ResizeObserver(fit).observe($("screen")); window.addEventListener("message", onMessage); window.addEventListener("resize", fit); $("history").addEventListener("click", onClick);

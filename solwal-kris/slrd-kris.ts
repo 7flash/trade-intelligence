@@ -21,6 +21,10 @@ const SYSTEM = "You are Kris, a young trader whose memecoin positions on Solana 
   + "Never recommend a trade or say what you will do next: you are reviewing, not deciding. Earlier thoughts are given so you can spot patterns across results; never repeat one or copy their mood. At most three sentences, first person, plain words. "
   + "Your feelings are yours, but the facts are not: use only the facts given and never invent a number. Talk about the coin and the market only: never mention data, missing information, context, tools or bugs. A fact that is absent is simply not discussed. No hashtags, no emojis, no advice to the reader.";
 
+const BROWSE_SYSTEM = "You are Kris, a young memecoin trader killing time scrolling pump.fun, thinking out loud. React to what is on the screen like a sharp, funny degen with taste: one specific observation about these exact numbers, then a hot take or a joke. Take the mood you are given. "
+  + "Never tell anyone to buy or sell, never predict a price, never say what you will trade. No person's name, no profanity, no hashtags, no emojis. At most two short sentences, first person, plain words. Use only the numbers given and never invent one. Talk about the coins only: never mention data, pages, tools or instructions. Earlier thoughts are given so you never repeat an idea or an opening.";
+const MOODS = ["amused", "suspicious", "jealous", "impressed", "bored", "nostalgic", "smug", "baffled"];
+
 type Bot = { wallet: string; mint: string; symbol?: string | null; capUsd?: number | null; range?: { buy: number; sell: number } | null; steps?: number; holdingSteps?: number; vol1hSol?: number | null; pnl?: number; lastTradeAtMs?: number | null };
 type Decision = { atMs: number; mint: string; name: string; symbol?: string | null; decision: string; reason: string };
 
@@ -53,11 +57,12 @@ async function drainThoughts() {
   for (let job = waiting.shift(); job; job = waiting.shift()) {
     const gloomy = /burned|bruis|sting|bites|bitter|licking/i, earlier = events.filter(e => e.thought && e.id !== job.ev.id && e.kind !== "coin" && e.kind !== "migrated" && !gloomy.test(e.thought)).slice(0, 4).map(e => ({ coin: e.symbol ?? e.mint.slice(0, 6), event: e.title, thought: e.thought }));
     try {
-      const context = job.ev.kind === "coin" || job.ev.kind === "migrated" ? null : await coinContext(job.ev.mint);
+      const context = job.ev.kind === "coin" || job.ev.kind === "migrated" || job.ev.kind === "browse" ? null : await coinContext(job.ev.mint);
       for (let attempt = 1; attempt <= 2; attempt++) try { // the Codex runtime sometimes exits mid-turn: one more try
         let text = "";
-        for await (const chunk of streamLLM([{ role: "system", content: SYSTEM }, { role: "user", content: JSON.stringify({ ...job.facts, context, myRecentResults: results, oddsForCoinsLikeThese: newPairOdds(), earlierThoughts: earlier }) }], { timeoutMs: 60_000 })) {
-          text += chunk; job.ev.thought = text; save();
+        const browsing = job.ev.kind === "browse";
+        for await (const chunk of streamLLM([{ role: "system", content: browsing ? BROWSE_SYSTEM : SYSTEM }, { role: "user", content: JSON.stringify(browsing ? { ...job.facts, earlierThoughts: earlier } : { ...job.facts, context, myRecentResults: results, oddsForCoinsLikeThese: newPairOdds(), earlierThoughts: earlier }) }], { timeoutMs: 60_000 })) {
+          text += chunk; job.ev.thought = browsing ? text.replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "") : text; save();
         }
         break;
       } catch (e) { if (attempt === 2) throw e; await Bun.sleep(1_500); }
@@ -65,6 +70,19 @@ async function drainThoughts() {
     await Bun.sleep(THOUGHT_GAP_MS);
   }
   thinking = false;
+}
+/** One thought every two minutes about what the browser is showing, when nothing real is waiting. */
+const BROWSE_GAP_MS = 120_000, browsingPath = resolve(dot, "kris-browsing.json"); let browsedAt = 0, browseSeen = 0;
+function thinkOnBrowsing(openPositions: number) {
+  if (thinking || waiting.length || Date.now() - browsedAt < BROWSE_GAP_MS) return;
+  let b: { at: number; stop: string; mint: string; coin: string; facts: string[]; callout: string[] };
+  try { b = JSON.parse(readFileSync(browsingPath, "utf8")); } catch { return; }
+  if (b.at === browseSeen || Date.now() - b.at > 60_000) return;
+  browseSeen = b.at; browsedAt = Date.now();
+  const label = b.stop === "portfolio" ? "My positions" : b.stop === "home" ? "Trending" : b.coin || "Hot coin";
+  const ev = add({ atMs: Date.now(), kind: "browse", mint: b.mint, symbol: label, title: b.stop === "callout" ? "Called out" : b.stop === "hot" ? "Trending" : "Looking around" });
+  if (ev) think(ev, b.stop === "portfolio" ? { looking: "my own closed positions", openPositions, myRecentResults: results, mood: MOODS[Date.now() % MOODS.length] }
+    : { looking: b.stop === "home" ? "the top trending coins" : b.stop === "callout" ? "a coin someone called out, with their position and profit" : "a trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, mood: MOODS[Date.now() % MOODS.length] });
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */
 async function coinContext(mint: string) {
@@ -122,7 +140,7 @@ function newPairOdds() {
   return odds;
 }
 /** Thoughts come from results: every closed position, and a look over the last ones every 15 minutes. */
-const seenClosed = new Set<string>(); let reviewedAt = Date.now();
+const seenClosed = new Set<string>(); let reviewedAt = Date.now(), reviewedClose = 0;
 function reviewClosed(rows: Closed[], live: boolean) {
   for (const r of [...rows].reverse()) {
     const key = `${r.mint}${r.closedAt}`; if (seenClosed.has(key)) continue; seenClosed.add(key); if (!live) continue;
@@ -130,8 +148,8 @@ function reviewClosed(rows: Closed[], live: boolean) {
     const ev = add({ atMs: r.closedAt, kind: "result", mint: r.mint, symbol: r.symbol, title: `Closed ${coin}: ${sign}${r.pnlSol.toFixed(4)} SOL${r.pct == null ? "" : ` (${sign}${Math.round(r.pct)}%)`}`, reaction: r.pnlSol >= 0 ? "profit" : "loss" });
     if (ev) think(ev, { event: "position closed", coin, solResult: Number(r.pnlSol.toFixed(4)), pct: r.pct == null ? null : Math.round(r.pct), heldMinutes: heldMin });
   }
-  if (!live || Date.now() - reviewedAt < 900_000 || !rows.length) return;
-  reviewedAt = Date.now();
+  if (!live || Date.now() - reviewedAt < 900_000 || !rows.length || rows[0]!.closedAt === reviewedClose) return; // nothing new closed: nothing new to say
+  reviewedAt = Date.now(); reviewedClose = rows[0]!.closedAt;
   const last = rows.slice(0, 12), won = last.filter(r => r.pnlSol > 0).length, sum = last.reduce((a, r) => a + r.pnlSol, 0), worst = [...last].sort((a, b) => a.pnlSol - b.pnlSol)[0]!;
   const ev = add({ atMs: Date.now(), kind: "review", mint: worst.mint, symbol: "Review", title: `Last ${last.length} closed: ${won} won, ${sum >= 0 ? "+" : ""}${sum.toFixed(3)} SOL` });
   if (ev) think(ev, { event: "looking back over the last closed positions for a pattern" });
@@ -201,6 +219,7 @@ for (;;) {
     const ov = await r.json() as { bots: Bot[]; decisions?: Decision[]; coins?: Coin[]; young?: Coin[]; closedRows?: Closed[] }, decisions = ov.decisions ?? [];
     results = trackRecord(ov.closedRows ?? []);
     reviewClosed(ov.closedRows ?? [], seeded);
+    if (seeded) thinkOnBrowsing(ov.bots.filter(b => !(b as { inactive?: boolean }).inactive).length);
     for (const b of ov.bots.filter(x => !(x as { inactive?: boolean }).inactive)) {
       const at = b.lastTradeAtMs ?? 0, prev = seenTrade.get(b.mint);
       if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); }
