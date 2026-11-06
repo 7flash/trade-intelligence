@@ -41,7 +41,7 @@ log("browser open on pump.fun");
 
 
 let here = HOME, wasBlocked = false, lastTrade = 0, step = 0, recent: string[] = [];
-const STOP_MS = 22_000, PORTFOLIO = `https://pump.fun/profile/${KRIS_WALLET}`;
+const STOP_MS = 26_000, PORTFOLIO = `https://pump.fun/profile/${KRIS_WALLET}`;
 const value = async (expression: string) => (await cdp("Runtime.evaluate", { expression, returnByValue: true }))?.result?.value;
 const go = async (url: string) => { await cdp("Page.navigate", { url }); log(`looking at ${url}`); };
 /** Clicks a link already on the page, as a person would, so the site does not reload. */
@@ -56,16 +56,17 @@ async function pointAt(find: string) {
 }
 const press = async () => { pointer.down = 1; await sleep(1_050); pointer.down = 0; };
 const byId = (id: string) => `document.getElementById(${JSON.stringify(id)})`;
+let cardRun = 0; // a new stop ends the card of the last one, even halfway through
 /** Kris changes the range on the card by hand. Only the card changes: nothing here reaches the bots. */
-async function setRange(p: Panel) {
+async function setRange(p: Panel, run: number) {
   const next = nextRange(p, (buy, sell) => slotPlan(buy, sell).steps);
   if (!next) return;
   for (const [id, text] of [["kris-buy", usd(next.buy)], ["kris-sell", usd(next.sell)], ["kris-steps", String(next.steps)]] as const) {
-    if (!(await pointAt(byId(id)))) return;
+    if (run !== cardRun || !(await pointAt(byId(id)))) return;
     await press();
     for (let i = 1; i <= text.length; i++) { await value(`${byId(id)}.textContent = ${JSON.stringify(text.slice(0, i))}`); await sleep(160); }
   }
-  if (!(await pointAt(byId("kris-set")))) return;
+  if (run !== cardRun || !(await pointAt(byId("kris-set")))) return;
   await press();
   await value(`(() => { ${byId("kris-set")}.textContent = "Range set"; ${byId("kris-set")}.style.background = "#8FA8FF"; ${byId("kris-mark")}.style.left = "calc(${rangeAt(next).toFixed(1)}% - 1px)"; })()`);
 }
@@ -105,7 +106,8 @@ async function read(stop: TourStop) {
   const coin = /^\/coin\//.test(seen.path), at = seen.text.indexOf("Market cap");
   const card = coin ? await rangeOf(seen.path.slice(6), safeName(seen.title.split(/ \$| \|/)[0] ?? ""), capOf(seen.text.slice(at, at + 200))) : null;
   await value(panelScript(card));
-  if (card) setTimeout(() => void setRange(card).catch(e => log(`card: ${String(e).slice(0, 80)}`)), 2_500);
+  const run = cardRun;
+  if (card) setTimeout(() => void setRange(card, run).catch(e => log(`card: ${String(e).slice(0, 80)}`)), 2_500);
   writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: Date.now(), stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
@@ -116,8 +118,9 @@ setInterval(async () => {
   const trade = await latestTrade();
   if (trade && trade.at > lastTrade) { lastTrade = trade.at; recent = remember(recent, `/coin/${trade.mint}`); return go(coinPage(trade.mint)); }
   const stop = TOUR[step % TOUR.length]!;
+  cardRun++; await value(panelScript(null));
   await visit();
-  setTimeout(() => { if (!wasBlocked) void read(stop).catch(e => log(`read: ${String(e).slice(0, 80)}`)); }, STOP_MS * 0.4);
+  setTimeout(() => { if (!wasBlocked) void read(stop).catch(e => log(`read: ${String(e).slice(0, 80)}`)); }, 3_000);
   setTimeout(() => { if (!wasBlocked) void scroll(); }, STOP_MS / 2);
 }, STOP_MS);
 
