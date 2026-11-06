@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
 import { pickCoin, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
-import { nextOrder, readOrder, writeOrder, type AgentOrder } from "./tui/agent-orders.ts";
+import { execution, nextOrder, readOrder, writeOrder, type AgentOrder } from "./tui/agent-orders.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
 const bridgeToken = readFileSync(resolve(dot, "bridge-token"), "utf8").trim();
@@ -49,7 +49,7 @@ log("browser open on pump.fun");
 
 const root = import.meta.dir; let ordering = false;
 let here = HOME, wasBlocked = false, lastTrade = 0, step = 0, recent: string[] = [];
-const STOP_MS = 26_000, PORTFOLIO = `https://pump.fun/profile/${KRIS_WALLET}`;
+const STOP_MS = 26_000, portfolio = () => `https://pump.fun/profile/${execution(root).address ?? KRIS_WALLET}`;
 const value = async (expression: string) => (await cdp("Runtime.evaluate", { expression, returnByValue: true }))?.result?.value;
 const go = async (url: string) => { await cdp("Page.navigate", { url }); log(`looking at ${url}`); };
 /** Clicks a link already on the page, as a person would, so the site does not reload. */
@@ -73,7 +73,7 @@ async function latestTrade() {
 lastTrade = (await latestTrade())?.at ?? 0;
 async function visit() {
   const stop = TOUR[step++ % TOUR.length]!;
-  if (stop === "portfolio") return go(PORTFOLIO);
+  if (stop === "portfolio") return go(portfolio());
   if (stop === "home") { if (!(await click("/"))) await go(HOME); return log("looking at the front page"); }
   const hrefs = JSON.parse(await value(`JSON.stringify([...document.querySelectorAll("a[href]")].map(a => a.getAttribute("href")))`) ?? "[]") as string[];
   const href = pickCoin(stop, hrefs, recent);

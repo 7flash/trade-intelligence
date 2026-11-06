@@ -1,18 +1,24 @@
-/** Who sends a range bot's trades. A file named .range-bots/execution holding "agent" hands them to the agent, who
- * presses the site's buttons; anything else, or no file, leaves them with the solard CLI path. Read before each trade. */
+/** Who sends a range bot's trades. The file .range-bots/execution holds "agent <address>", the wallet signed into the
+ * agent's browser: bots on that wallet go through him, who presses the site's buttons. "cli <address>" or no file leaves
+ * every trade with the solard CLI path, and a bot on any other wallet always stays there. Read before each trade. */
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 export type OrderState = "open" | "pressing" | "pressed" | "failed" | "cancelled";
 export type AgentOrder = { id: string; wallet: string; mint: string; side: "buy" | "sell"; amountUsd: number; at: number; state: OrderState; note?: string; dry?: boolean };
-export type OrderDesk = { on(): boolean; place(o: Pick<AgentOrder, "wallet" | "mint" | "side" | "amountUsd">): string; read(id: string): AgentOrder | null; close(id: string): void; cancel(id: string): void };
+export type OrderDesk = { keyless?: boolean; on(): boolean; place(o: Pick<AgentOrder, "wallet" | "mint" | "side" | "amountUsd">): string; read(id: string): AgentOrder | null; close(id: string): void; cancel(id: string): void };
 /** From the bot's trigger to the fill showing on chain. After this a sell goes back to the CLI path. */
 export const ORDER_MS = 45_000;
 const dirOf = (root: string) => join(root, ".range-bots", "agent-orders");
 const fileOf = (root: string, id: string) => join(dirOf(root), `${id}.json`);
 
-export function executionOn(root: string) { try { return readFileSync(join(root, ".range-bots", "execution"), "utf8").trim() === "agent"; } catch { return false; } }
+/** The wallet name for the browser's wallet, which solard holds no key for. */
+export const AGENT_WALLET = "agent";
+export function execution(root: string) {
+  try { const [mode, address] = readFileSync(join(root, ".range-bots", "execution"), "utf8").trim().split(/\s+/); return { on: mode === "agent" && !!address, address: address ?? null }; }
+  catch { return { on: false, address: null }; }
+}
 export function readOrder(root: string, id: string): AgentOrder | null { try { return JSON.parse(readFileSync(fileOf(root, id), "utf8")); } catch { return null; } }
 export function writeOrder(root: string, o: AgentOrder) {
   mkdirSync(dirOf(root), { recursive: true });
@@ -24,9 +30,10 @@ export function nextOrder(root: string, now = Date.now()): AgentOrder | null {
   const open = names.filter(n => n.endsWith(".json")).map(n => readOrder(root, n.slice(0, -5))).filter((o): o is AgentOrder => o?.state === "open" && now - o.at < ORDER_MS - 10_000);
   return open.sort((a, b) => a.at - b.at)[0] ?? null;
 }
-export function orderDesk(root: string): OrderDesk {
+export function orderDesk(root: string, address: string, keyless = false): OrderDesk {
   return {
-    on: () => executionOn(root),
+    keyless,
+    on: () => { const e = execution(root); return e.on && e.address === address; },
     place: o => { const id = randomUUID(); writeOrder(root, { ...o, id, at: Date.now(), state: "open" }); return id; },
     read: id => readOrder(root, id),
     close: id => rmSync(fileOf(root, id), { force: true }),
