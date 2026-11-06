@@ -4,9 +4,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { capOf, nextRange, panelScript, pickCoin, rangeAt, refuseMain, remember, safeFacts, safeName, TOUR, tradeBoxScript, trendingRow, usd, type Panel, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
+import { pickCoin, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
 import { nextOrder, readOrder, writeOrder, type AgentOrder } from "./tui/agent-orders.ts";
-import { SLOT_CONFIG, slotPlan } from "./tui/kris-slots.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
 const bridgeToken = readFileSync(resolve(dot, "bridge-token"), "utf8").trim();
@@ -64,21 +63,6 @@ async function pointAt(find: string) {
   return true;
 }
 const press = async () => { pointer.down = 1; await sleep(1_050); pointer.down = 0; };
-const byId = (id: string) => `document.getElementById(${JSON.stringify(id)})`;
-let cardRun = 0; // a new stop ends the card of the last one, even halfway through
-/** Kris changes the range on the card by hand. Only the card changes: nothing here reaches the bots. */
-async function setRange(p: Panel, run: number) {
-  const next = nextRange(p, (buy, sell) => slotPlan(buy, sell).steps);
-  if (!next) return;
-  for (const [id, text] of [["kris-buy", usd(next.buy)], ["kris-sell", usd(next.sell)], ["kris-steps", String(next.steps)]] as const) {
-    if (run !== cardRun || !(await pointAt(byId(id)))) return;
-    await press();
-    for (let i = 1; i <= text.length; i++) { await value(`${byId(id)}.textContent = ${JSON.stringify(text.slice(0, i))}`); await sleep(160); }
-  }
-  if (run !== cardRun || !(await pointAt(byId("kris-set")))) return;
-  await press();
-  await value(`(() => { ${byId("kris-set")}.textContent = "Range set"; ${byId("kris-set")}.style.background = "#8FA8FF"; ${byId("kris-mark")}.style.left = "calc(${rangeAt(next).toFixed(1)}% - 1px)"; })()`);
-}
 const scroll = () => cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: 760, y: 430, deltaX: 0, deltaY: 500 });
 async function latestTrade() {
   const ov: any = await fetch(`${view}/api/overview`, { headers: { cookie: `slrd_web=${bridgeToken}` }, signal: AbortSignal.timeout(10_000) }).then(r => r.json()).catch(() => null);
@@ -100,27 +84,16 @@ async function visit() {
   await press();
   if (await click(href)) log(`${stop}: ${href}`);
 }
-/** His real range when he holds a bot on this coin; otherwise the range his rules would use. */
-async function rangeOf(mint: string, coin: string, cap: number | null) {
-  const ov: any = await fetch(`${view}/api/overview`, { headers: { cookie: `slrd_web=${bridgeToken}` }, signal: AbortSignal.timeout(10_000) }).then(r => r.json()).catch(() => null);
-  const bot = (ov?.bots ?? []).find((b: any) => b.mint === mint && !b.inactive && b.range);
-  if (bot) return { coin, cap, buy: bot.range.buy, sell: bot.range.sell, steps: bot.steps, live: true };
-  return { coin, cap, buy: SLOT_CONFIG.newBuyUsd, sell: SLOT_CONFIG.newSellUsd, steps: slotPlan(SLOT_CONFIG.newBuyUsd, SLOT_CONFIG.newSellUsd).steps, live: false };
-}
 /** What this stop shows, for Kris to think about: see safeFacts for why it is only numbers and names. */
 let posted = "";
 async function read(stop: TourStop) {
   const seen = JSON.parse(await value(`JSON.stringify({ title: document.title, path: location.pathname, text: document.body.innerText, coins: [...document.querySelectorAll('a[href^="/coin/"]')].filter(a => !a.getAttribute("href").includes("highlight_callout")).slice(0, 6).map(a => { let e = a; for (let i = 0; i < 4 && e && !/\\$/.test(e.innerText); i++) e = e.parentElement; return e ? e.innerText : a.innerText; }) })`) ?? "null") as { title: string; path: string; text: string; coins: string[] } | null;
   if (!seen || blocked(seen.title)) return;
   const coin = /^\/coin\//.test(seen.path), at = seen.text.indexOf("Market cap");
-  const card = coin ? await rangeOf(seen.path.slice(6), safeName(seen.title.split(/ \$| \|/)[0] ?? ""), capOf(seen.text.slice(at, at + 200))) : null;
-  await value(panelScript(card));
-  const run = cardRun;
-  if (card) setTimeout(() => void setRange(card, run).catch(e => log(`card: ${String(e).slice(0, 80)}`)), 2_500);
   writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: Date.now(), stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
-    callout: stop === "callout" ? safeFacts(posted, 10) : [], plan: card ? nextRange(card, (buy, sell) => slotPlan(buy, sell).steps) : null }));
+    callout: stop === "callout" ? safeFacts(posted, 10) : [] }));
 }
 /** A real mouse click, with Kris's cursor on the stream going there first. */
 async function realClick(at: { x: number; y: number }, box: TradeBox) {
@@ -138,7 +111,6 @@ async function pressOrder(o: AgentOrder) {
   const fail = (note: string) => { writeOrder(root, { ...o, state: "failed", note }); log(`order ${o.side} ${o.mint.slice(0, 6)}: ${note}`); };
   writeOrder(root, { ...o, state: "pressing" });
   const url = coinPage(o.mint); if (url === HOME) return fail("bad coin");
-  cardRun++; await value(panelScript(null));
   await go(url);
   let box: TradeBox | null = null;
   for (let i = 0; i < 24 && !box; i++) { await sleep(500); if ((await value("location.pathname")) === `/coin/${o.mint}`) box = await readBox(); }
@@ -156,6 +128,8 @@ async function pressOrder(o: AgentOrder) {
   if (readOrder(root, o.id)?.state !== "pressing") return log("order ended before the press");
   await realClick(box.main!, box);
   writeOrder(root, { ...o, state: "pressed" }); log(`pressed ${box.main!.text}: ${o.side} $${o.amountUsd} of ${o.mint.slice(0, 6)}`);
+  // Stays on the coin while the trade lands, and notes what the site says. This goes to the log only.
+  for (const wait of [1_000, 2_000, 3_000, 6_000]) { await sleep(wait); log(`after press: ${await value(afterPressScript) ?? ""}`); }
 }
 setInterval(async () => {
   if (ordering || wasBlocked) return;
@@ -168,7 +142,6 @@ setInterval(async () => {
   const trade = await latestTrade();
   if (trade && trade.at > lastTrade) { lastTrade = trade.at; recent = remember(recent, `/coin/${trade.mint}`); return go(coinPage(trade.mint)); }
   const stop = TOUR[step % TOUR.length]!;
-  cardRun++; await value(panelScript(null));
   await visit();
   setTimeout(() => { if (!wasBlocked) void read(stop).catch(e => log(`read: ${String(e).slice(0, 80)}`)); }, 3_000);
   setTimeout(() => { if (!wasBlocked) void scroll(); }, STOP_MS / 2);

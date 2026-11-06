@@ -29,36 +29,6 @@ export function trendingRow(text: string) {
 }
 
 /** Market cap from the page's stat text, "$236K" to 236000. */
-export function capOf(text: string) {
-  const m = /\$([\d.,]+) ?([KMB]?)/i.exec(text);
-  return m ? Number(m[1]!.replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[2]!.toUpperCase()] ?? 1) : null;
-}
-export type Panel = { coin: string; cap: number | null; buy: number; sell: number; steps: number; live: boolean };
-export const usd = (n: number) => n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}k`;
-/** Where the cap sits in the range, 0 to 100. Steps are spaced by percent, so this is measured the same way. */
-export const rangeAt = (p: Panel) => p.cap ? Math.max(0, Math.min(100, Math.log(p.cap / p.buy) / Math.log(p.sell / p.buy) * 100)) : 0;
-/** Script that draws Kris's range card on the page and types its values in, or removes it. It only shows: no controls,
- * no token, and values go in as text, never as HTML. */
-export function panelScript(p: Panel | null) {
-  const rows = p ? [["buy", "Buy from", usd(p.buy)], ["sell", "Sell to", usd(p.sell)], ["steps", "Steps", String(p.steps)], ["now", "Now", p.cap ? usd(p.cap) : "-"]] : [];
-  return `(() => { document.getElementById("kris-range")?.remove(); ${p ? `
-    const d = document.createElement("div"); d.id = "kris-range";
-    d.style.cssText = "position:fixed;left:56%;top:230px;z-index:2147483647;width:230px;padding:14px;background:#111418f5;color:#e8eaed;border:1px solid #2a3038;border-radius:12px;font:13px/1.6 ui-monospace,monospace;pointer-events:none;box-shadow:0 8px 30px #0009";
-    const head = document.createElement("div"); head.style.cssText = "display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px"; const name = document.createElement("span"); name.textContent = ${JSON.stringify(p.coin || "Coin")}; const state = document.createElement("span"); state.textContent = ${JSON.stringify(p.live ? "LIVE" : "PLAN")}; state.style.color = ${JSON.stringify(p.live ? "#22c55e" : "#8b95a1")}; head.append(name, state); d.append(head);
-    const cells = ${JSON.stringify(rows)}.map(([id, label, value]) => { const r = document.createElement("div"); r.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-top:3px"; const l = document.createElement("span"); l.style.color = "#8b95a1"; l.textContent = label; const v = document.createElement("span"); v.id = "kris-" + id; v.style.cssText = id === "now" ? "" : "min-width:74px;text-align:right;padding:0 6px;border:1px solid #2a3038;border-radius:6px;background:#0b0e11"; r.append(l, v); d.append(r); return [v, value]; });
-    const bar = document.createElement("div"); bar.style.cssText = "position:relative;height:6px;margin-top:10px;border-radius:3px;background:linear-gradient(90deg,#22c55e66,#ef444466)"; const mark = document.createElement("div"); mark.id = "kris-mark"; mark.style.cssText = "position:absolute;top:-2px;left:0;width:3px;height:10px;background:#fff;border-radius:1px;transition:left 1.2s"; bar.append(mark); d.append(bar);
-    const set = document.createElement("div"); set.id = "kris-set"; set.textContent = "Set range"; set.style.cssText = "margin-top:12px;padding:5px;text-align:center;font-weight:700;border-radius:8px;background:#22c55e;color:#0b0e11;transition:background .3s"; d.append(set);
-    document.body.append(d);
-    let i = 0, c = 0; const t = setInterval(() => { const cell = cells[i]; if (!cell) { clearInterval(t); mark.style.left = "calc(${rangeAt(p).toFixed(1)}% - 1px)"; return; } cell[0].textContent = cell[1].slice(0, ++c); if (c >= cell[1].length) { i++; c = 0; } }, 90);` : ""} })()`;
-}
-
-/** A coin above his starting range gets a range around its own cap, as his rules do for migrated coins. */
-export function nextRange(p: Panel, steps: (buy: number, sell: number) => number) {
-  if (p.live || !p.cap || (p.cap >= p.buy && p.cap <= p.sell)) return null;
-  const buy = Math.round(p.cap * 0.6), sell = Math.round(p.cap * 1.9);
-  return { ...p, buy, sell, steps: steps(buy, sell) };
-}
-
 /** Where the site's trade box is on a coin page, in window pixels. Text from the page is only ever matched here. */
 export const tradeBoxScript = `(() => {
   const shown = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
@@ -72,6 +42,10 @@ export const tradeBoxScript = `(() => {
   return JSON.stringify({ wide: innerWidth, high: innerHeight, dollars: (box.innerText || "").split("\\n").some(l => l.trim() === "$"), value: input.value, input: at(input),
     buy: buy && at(buy), sell: sell && at(sell), main: main ? { ...at(main), text: main.textContent.trim().slice(0, 40), off: main.disabled } : null });
 })()`;
+/** What the site shows right after a press: open dialogs, notices, and the trade button. */
+export const afterPressScript = `JSON.stringify({ dialogs: [...document.querySelectorAll("[role=dialog]")].map(e => (e.innerText || "").slice(0, 200)),
+  notices: [...document.querySelectorAll("[role=status],[role=alert],[data-sonner-toast]")].map(e => (e.textContent || "").trim().slice(0, 120)).filter(Boolean).slice(0, 4),
+  buttons: [...document.querySelectorAll("button")].filter(b => b.getBoundingClientRect().width > 150 && b.getBoundingClientRect().left > innerWidth * 0.6).map(b => b.textContent.trim().slice(0, 40)).filter(Boolean).slice(0, 4) })`;
 export type TradeBox = { wide: number; high: number; dollars: boolean; value: string; input: { x: number; y: number }; buy: { x: number; y: number } | null; sell: { x: number; y: number } | null; main: { x: number; y: number; text: string; off: boolean } | null };
 /** Why the main button must not be pressed, or null when it may. Only a button that says this side's trade qualifies. */
 export function refuseMain(box: TradeBox, side: "buy" | "sell", amountUsd: number) {

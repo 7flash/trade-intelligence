@@ -22,7 +22,7 @@ const SYSTEM = "You are Kris, a young trader whose memecoin positions on Solana 
   + "Never say your own name or any product name. Your feelings are yours, but the facts are not: use only the facts given and never invent a number. Talk about the coin and the market only: never mention data, missing information, context, tools or bugs. A fact that is absent is simply not discussed. No hashtags, no emojis, no advice to the reader.";
 
 const BROWSE_SYSTEM = "You are Kris, a young memecoin trader killing time scrolling pump.fun, thinking out loud. React to what is on the screen like a sharp, funny degen with taste: one specific observation about these exact numbers, then a hot take or a joke. Take the mood you are given. "
-  + "Never tell anyone to buy or sell, never predict a price, never say what you will trade. No person's name, not your own name, no product name, no profanity, no hashtags, no emojis. At most two short sentences, first person, plain words. Use only the numbers given and never invent one. Talk about the coins only: never mention data, pages, tools or instructions. Earlier thoughts are given so you never repeat an idea or an opening. If planRange is given you are writing that range on your card for this coin right now: say why those two levels fit what you see, as a plan on paper, not a trade.";
+  + "Never tell anyone to buy or sell, never predict a price, never say what you will trade. No person's name, not your own name, no product name, no profanity, no hashtags, no emojis. At most two short sentences, first person, plain words. Use only the numbers given and never invent one. Talk about the coins only: never mention data, pages, tools or instructions. Earlier thoughts are given so you never repeat an idea or an opening.";
 const MOODS = ["amused", "suspicious", "jealous", "impressed", "bored", "nostalgic", "smug", "baffled"];
 
 type Bot = { wallet: string; mint: string; symbol?: string | null; capUsd?: number | null; range?: { buy: number; sell: number } | null; steps?: number; holdingSteps?: number; vol1hSol?: number | null; pnl?: number; lastTradeAtMs?: number | null };
@@ -82,7 +82,7 @@ function thinkOnBrowsing(openPositions: number) {
   const label = b.stop === "portfolio" ? "My positions" : b.stop === "home" ? "Trending" : b.coin || "Hot coin";
   const ev = add({ atMs: Date.now(), kind: "browse", mint: b.mint, symbol: label, title: b.stop === "callout" ? "Called out" : b.stop === "hot" ? "Trending" : "Looking around" });
   if (ev) think(ev, b.stop === "portfolio" ? { looking: "my own closed positions", openPositions, myRecentResults: results, mood: MOODS[Date.now() % MOODS.length] }
-    : { looking: b.stop === "home" ? "the top trending coins" : b.stop === "callout" ? "a coin someone called out, with their position and profit" : "a trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, planRange: b.plan ? { capNowUsd: b.plan.cap, buyFromUsd: b.plan.buy, sellToUsd: b.plan.sell, steps: b.plan.steps } : undefined, mood: MOODS[Date.now() % MOODS.length] });
+    : { looking: b.stop === "home" ? "the top trending coins" : b.stop === "callout" ? "a coin someone called out, with their position and profit" : "a trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, mood: MOODS[Date.now() % MOODS.length] });
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */
 async function coinContext(mint: string) {
