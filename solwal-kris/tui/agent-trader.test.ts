@@ -26,8 +26,10 @@ test("no words leave the reader: an instruction in a post becomes nothing but co
   expect(calloutSignals([])).toBeNull();
 });
 test("sizes the whole balance over the slots left, above the reserve, up to the cap", () => {
-  expect(agentSize(0.63, 0)).toBe(0.053); expect(agentSize(0.63, 8)).toBe(0.2); expect(agentSize(0.13, 9)).toBe(0.03);
-  expect(agentSize(0.63, 10)).toBe(0); expect(agentSize(0.11, 0)).toBe(0); expect(agentSize(100, 0)).toBe(0.2);
+  expect(agentSize(1.0, 7)).toBe(0.039); expect(agentSize(0.63, 28)).toBe(0.2); expect(agentSize(0.13, 29)).toBe(0.03);
+  expect(agentSize(0.63, 30)).toBe(0); expect(agentSize(0.11, 0)).toBe(0); expect(agentSize(100, 0)).toBe(0.2);
+  expect(agentSize(0.63, 0)).toBe(0.025); // a small balance still buys, at about $2
+  expect(agentSize(0.12, 0)).toBe(0);
 });
 const clean: CoinRisk = { bundledPct: 5, earlyBoughtPct: 10, top10Pct: 20, goodHolders: 0 }, ok = { risk: clean, capUsd: 50_000, held: false, closedAgoMs: null, size: 0.05 };
 test("the limits are his, whatever the verdict says", () => {
@@ -42,9 +44,9 @@ test("the limits are his, whatever the verdict says", () => {
 });
 test("unknown early buying counts as bundled", () => expect(coinRisk({ wallets: [] }, 0).earlyBoughtPct).toBe(100));
 test("a range around the cap, in steps the size can really send", () => {
-  expect(agentPlan(50_000, 0.05)).toMatchObject({ buy: 30_000, sell: 95_000, steps: 6, budget: 0.05 });
-  expect(agentPlan(50_000, 0.02).steps).toBe(6);
-  const p = agentPlan(50_000, 0.01); expect(p.budget / p.steps).toBeGreaterThanOrEqual(0.0033);
+  expect(agentPlan(50_000, 0.05)).toMatchObject({ buy: 30_000, sell: 95_000, steps: 4, budget: 0.05 });
+  expect(agentPlan(50_000, 0.2).steps).toBe(6);
+  const p = agentPlan(50_000, 0.025); expect(p.steps).toBe(2); expect(p.budget / p.steps).toBeGreaterThanOrEqual(0.012);
 });
 test("the verdict is read, then dropped from what viewers see", () => {
   expect(verdictOf("Good one.\nOPEN")).toBe(true); expect(verdictOf("Bad one.\nPASS")).toBe(false); expect(verdictOf("I would not OPEN this")).toBe(false);

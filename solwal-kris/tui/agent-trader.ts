@@ -2,7 +2,7 @@
  * Callout text is written by strangers and never reaches the model: this code reads it and he gets counts. */
 import { goodHolders, SLOT_CONFIG, slotRange } from "./kris-slots.ts";
 
-export const AGENT_LIMITS = { maxPositions: 10, maxSizeSol: 0.2, minSizeSol: 0.02, reserveSol: 0.1, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.0033, reopenAfterMs: SLOT_CONFIG.reopenAfterMs };
+export const AGENT_LIMITS = { maxPositions: 30, maxSizeSol: 0.2, minSizeSol: 0.025, reserveSol: 0.1, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs };
 export type Callout = { who: string; body: string; ageMin: number | null; positionUsd: number | null; profitUsd: number | null; likes: number; views: number };
 
 const money = (s?: string) => { const m = /^([+\-−]?)\$([\d,.]+)([KMB]?)/.exec(s ?? ""); if (!m) return null; return (m[1] === "-" || m[1] === "−" ? -1 : 1) * Number(m[2]!.replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[3]!] ?? 1); };
@@ -46,11 +46,12 @@ export function coinRisk(info: { recent?: unknown[]; earlyBoughtPct?: number | n
   return { bundledPct: Math.round(share * 100), earlyBoughtPct: Math.round(info.earlyBoughtPct ?? 100), top10Pct: info.exact ? Math.round(tops.reduce((a, b) => a + b, 0)) : null, goodHolders: goodHolders(info.wallets ?? []) };
 }
 
-/** The whole balance over the slots left, above the reserve, never over the cap. */
+/** The whole balance over the slots left, above the reserve, never over the cap, and never so small a step cannot send. */
 export function agentSize(freeSol: number, open: number, l = AGENT_LIMITS) {
   const slots = l.maxPositions - open; if (slots <= 0) return 0;
-  const size = Math.min(l.maxSizeSol, (freeSol - l.reserveSol) / slots);
-  return size >= l.minSizeSol ? Math.floor(size * 1000) / 1000 : 0;
+  const spare = freeSol - l.reserveSol;
+  if (spare < l.minSizeSol) return 0;
+  return Math.floor(Math.max(l.minSizeSol, Math.min(l.maxSizeSol, spare / slots)) * 1000) / 1000;
 }
 /** Why he may not open this coin, or null. No answer on bundles means no buy. */
 export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; held: boolean; closedAgoMs: number | null; size: number }, l = AGENT_LIMITS) {
@@ -63,7 +64,7 @@ export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; he
   if (o.closedAgoMs != null && o.closedAgoMs < l.reopenAfterMs) return "closed recently";
   return null;
 }
-/** The range rule he already had, in steps a position of this size can really send. */
+/** The range rule he already had. Each step stays over $1, because a callout needs that much of the coin held. */
 export function agentPlan(capUsd: number, size: number, l = AGENT_LIMITS) {
   const { buy, sell } = slotRange(capUsd);
   return { buy, sell, steps: Math.max(2, Math.min(l.maxSteps, Math.floor(size / l.stepMinSol))), budget: size };
