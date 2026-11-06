@@ -134,8 +134,8 @@ async function postCallout(job: CalloutJob) {
   let open = false;
   for (let i = 0; i < 12 && !open; i++) { await sleep(700); open = await tap("/^Add your callout/"); } // the holder's card loads after the trade box
   if (!open) return log(`callout ${job.mint.slice(0, 6)}: no button`);
-  await sleep(1_500);
-  let form = JSON.parse(await value(calloutFormScript) ?? "null");
+  let form: any = null;
+  for (let i = 0; i < 12 && !form?.input; i++) { await sleep(500); form = JSON.parse(await value(calloutFormScript) ?? "null"); } // the box takes a moment to open
   log(`callout form: ${JSON.stringify(form).slice(0, 300)}`);
   if (!form?.input) { await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); return log(`callout ${job.mint.slice(0, 6)}: no box`); }
   await realClick(form.input, form);
