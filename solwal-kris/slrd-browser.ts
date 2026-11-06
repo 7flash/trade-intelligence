@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { capOf, panelScript, pickCoin, remember, safeFacts, safeName, TOUR, trendingRow, type TourStop } from "./tui/pump-tour.ts";
+import { capOf, nextRange, panelScript, pickCoin, rangeAt, remember, safeFacts, safeName, TOUR, trendingRow, usd, type Panel, type TourStop } from "./tui/pump-tour.ts";
 import { SLOT_CONFIG, slotPlan } from "./tui/kris-slots.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
@@ -46,6 +46,29 @@ const value = async (expression: string) => (await cdp("Runtime.evaluate", { exp
 const go = async (url: string) => { await cdp("Page.navigate", { url }); log(`looking at ${url}`); };
 /** Clicks a link already on the page, as a person would, so the site does not reload. */
 const click = (href: string) => value(`(() => { const a = [...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)}); if (!a) return false; a.scrollIntoView({ block: "center" }); a.click(); return true; })()`);
+/** Where Kris's cursor is, as a share of the window. It goes out with each frame and the site draws it. */
+const pointer = { x: 0.5, y: 0.5, down: 0 };
+async function pointAt(find: string) {
+  const box = JSON.parse(await value(`(() => { const e = ${find}; if (!e) return "null"; const r = e.getBoundingClientRect(); return JSON.stringify({ x: (r.left + r.width / 2) / innerWidth, y: (r.top + r.height / 2) / innerHeight }); })()`) ?? "null") as { x: number; y: number } | null;
+  if (!box) return false;
+  pointer.x = box.x; pointer.y = box.y; await sleep(1_500);
+  return true;
+}
+const press = async () => { pointer.down = 1; await sleep(1_050); pointer.down = 0; };
+const byId = (id: string) => `document.getElementById(${JSON.stringify(id)})`;
+/** Kris changes the range on the card by hand. Only the card changes: nothing here reaches the bots. */
+async function setRange(p: Panel) {
+  const next = nextRange(p, (buy, sell) => slotPlan(buy, sell).steps);
+  if (!next) return;
+  for (const [id, text] of [["kris-buy", usd(next.buy)], ["kris-sell", usd(next.sell)], ["kris-steps", String(next.steps)]] as const) {
+    if (!(await pointAt(byId(id)))) return;
+    await press();
+    for (let i = 1; i <= text.length; i++) { await value(`${byId(id)}.textContent = ${JSON.stringify(text.slice(0, i))}`); await sleep(160); }
+  }
+  if (!(await pointAt(byId("kris-set")))) return;
+  await press();
+  await value(`(() => { ${byId("kris-set")}.textContent = "Range set"; ${byId("kris-set")}.style.background = "#8FA8FF"; ${byId("kris-mark")}.style.left = "calc(${rangeAt(next).toFixed(1)}% - 1px)"; })()`);
+}
 const scroll = () => cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: 760, y: 430, deltaX: 0, deltaY: 500 });
 async function latestTrade() {
   const ov: any = await fetch(`${view}/api/overview`, { headers: { cookie: `slrd_web=${bridgeToken}` }, signal: AbortSignal.timeout(10_000) }).then(r => r.json()).catch(() => null);
@@ -62,6 +85,9 @@ async function visit() {
   if (!href) return visit();
   recent = remember(recent, href);
   posted = stop === "callout" ? await value(`(() => { let e = [...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)}); while (e && e.innerText.length < 80) e = e.parentElement; return e ? e.innerText : ""; })()`) ?? "" : "";
+  await value(`[...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)})?.scrollIntoView({ block: "center" })`);
+  await pointAt(`[...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)})`);
+  await press();
   if (await click(href)) log(`${stop}: ${href}`);
 }
 /** His real range when he holds a bot on this coin; otherwise the range his rules would use. */
@@ -74,10 +100,12 @@ async function rangeOf(mint: string, coin: string, cap: number | null) {
 /** What this stop shows, for Kris to think about: see safeFacts for why it is only numbers and names. */
 let posted = "";
 async function read(stop: TourStop) {
-  const seen = JSON.parse(await value(`JSON.stringify({ title: document.title, path: location.pathname, text: document.body.innerText, coins: [...document.querySelectorAll('a[href^="/coin/"]')].filter(a => !a.getAttribute("href").includes("highlight_callout")).slice(0, 6).map(a => a.innerText) })`) ?? "null") as { title: string; path: string; text: string; coins: string[] } | null;
+  const seen = JSON.parse(await value(`JSON.stringify({ title: document.title, path: location.pathname, text: document.body.innerText, coins: [...document.querySelectorAll('a[href^="/coin/"]')].filter(a => !a.getAttribute("href").includes("highlight_callout")).slice(0, 6).map(a => { let e = a; for (let i = 0; i < 4 && e && !/\\$/.test(e.innerText); i++) e = e.parentElement; return e ? e.innerText : a.innerText; }) })`) ?? "null") as { title: string; path: string; text: string; coins: string[] } | null;
   if (!seen || blocked(seen.title)) return;
   const coin = /^\/coin\//.test(seen.path), at = seen.text.indexOf("Market cap");
-  await value(panelScript(coin ? await rangeOf(seen.path.slice(6), safeName(seen.title.split(/ \$| \|/)[0] ?? ""), capOf(seen.text.slice(at, at + 200))) : null));
+  const card = coin ? await rangeOf(seen.path.slice(6), safeName(seen.title.split(/ \$| \|/)[0] ?? ""), capOf(seen.text.slice(at, at + 200))) : null;
+  await value(panelScript(card));
+  if (card) setTimeout(() => void setRange(card).catch(e => log(`card: ${String(e).slice(0, 80)}`)), 2_500);
   writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: Date.now(), stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
@@ -103,9 +131,9 @@ for (;;) {
     here = href;
     if (shot?.data && dry) writeFileSync(resolve(dot, "screen.jpg"), Buffer.from(shot.data, "base64"));
     else if (shot?.data) {
-      const r = await fetch(target, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "image/jpeg", "x-screen-url": here }, body: Buffer.from(shot.data, "base64"), signal: AbortSignal.timeout(8_000) }).catch(e => { log(`push: ${String(e).slice(0, 80)}`); return null; });
+      const r = await fetch(target, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "image/jpeg", "x-screen-url": here, "x-screen-cursor": `${pointer.x.toFixed(3)},${pointer.y.toFixed(3)},${pointer.down}` }, body: Buffer.from(shot.data, "base64"), signal: AbortSignal.timeout(8_000) }).catch(e => { log(`push: ${String(e).slice(0, 80)}`); return null; });
       if (r && !r.ok) log(`push: ${r.status}`);
     }
   }
-  await sleep(1_500);
+  await sleep(1_000);
 }

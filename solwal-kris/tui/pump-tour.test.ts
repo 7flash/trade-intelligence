@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { capOf, panelScript, pickCoin, rangeAt, remember, safeFacts, safeName, trendingRow } from "./pump-tour.ts";
+import { capOf, nextRange, panelScript, pickCoin, rangeAt, remember, safeFacts, safeName, trendingRow } from "./pump-tour.ts";
 
 const a = "EFWotn2UtV2cAAAAAAAAAAAAAAAAAAAAAAAAAApump", b = "GdY4Z6pYUcr3AAAAAAAAAAAAAAAAAAAAAAAAAApump", c = "C5xph2yL6gMdAAAAAAAAAAAAAAAAAAAAAAAAAApump";
 const hrefs = [`/coin/${a}`, `/coin/${b}`, `/coin/${c}?highlight_callout=49044925-1581-4a3b`, "/coin/imeme.nearlytrade.near?highlight_callout=c629", "/coin/0x94641b9701aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "/perps", "https://evil.example/coin/x"];
@@ -57,5 +57,11 @@ test("no coin removes the card", () => {
   const js = panelScript(null);
   expect(js).toContain('getElementById("kris-range")?.remove()');
   expect(js).not.toContain("createElement");
+});
+test("a coin above the plan gets a range around its own cap; a live bot is never touched", () => {
+  expect(nextRange(plan, () => 8)).toEqual({ ...plan, buy: 141_600, sell: 448_400, steps: 8 });
+  expect(nextRange({ ...plan, cap: 20_000 }, () => 8)).toBeNull();
+  expect(nextRange({ ...plan, live: true }, () => 8)).toBeNull();
+  expect(nextRange({ ...plan, cap: null }, () => 8)).toBeNull();
 });
 

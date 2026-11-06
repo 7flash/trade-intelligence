@@ -17,7 +17,7 @@ export default function KrisRoom() {
         <section className="workstation">
           <div className="monitor">
             <div className="browser">
-              <div className="tabs-row"><span className="dots"><i /><i /><i /></span><span className="tab">Solard Terminal</span></div>
+              <div className="tabs-row"><span className="dots"><i /><i /><i /></span><span id="tab" className="tab">Solard Terminal</span></div>
               <div className="browser-bar"><span className="nav">‹</span><span className="nav">›</span><span className="nav">⟳</span><a id="address" className="address" href="https://solard.xyz/terminal?agent=kris" target="_blank" rel="noreferrer"><span className="lock">●</span> solard.xyz/terminal?agent=kris</a></div>
             </div>
             <div className="screen" id="screen">

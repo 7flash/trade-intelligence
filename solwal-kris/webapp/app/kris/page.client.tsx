@@ -57,7 +57,8 @@ async function react(name: string | null) {
 }
 /** Go to a random point in a rect, not its middle: rows and panels would otherwise look like one fixed spot. */
 async function goTo(r: Rect | null | undefined, press = false, fx = 0.15 + Math.random() * 0.7, fy = 0.15 + Math.random() * 0.7) {
-  if (!r) return; const p = spot(r, fx, fy, scale); moveTo(p.x, p.y); await sleep(1_400); if (press) { click(p.x, p.y); await sleep(200); }
+  if (!r || !($("browser") as HTMLImageElement).hidden) return; // the stream moves the cursor while it is on
+  const p = spot(r, fx, fy, scale); moveTo(p.x, p.y); await sleep(1_400); if (press) { click(p.x, p.y); await sleep(200); }
 }
 /** The eye path over a position: its name, its range bar, across the chart, then one of the side panels. */
 async function inspect(mint: string, long: boolean) {
@@ -151,14 +152,22 @@ async function pullBots() {
 }
 
 /** Kris's real browser when it is streaming; the terminal when it is not. */
-let frameUrl = "";
+let frameUrl = "", pressed = false;
 async function showBrowser() {
   const r = await fetch("api/screen", { cache: "no-store" }).catch(() => null), img = $("browser") as HTMLImageElement;
   const bar = $("address") as HTMLAnchorElement, at = r?.ok ? r.headers.get("x-screen-url") : null, url = at ?? "https://solard.xyz/terminal?agent=kris";
+  $("tab").textContent = at ? "pump.fun" : "Solard Terminal";
   bar.href = url; bar.lastChild!.textContent = ` ${url.replace(/^https:\/\//, "").slice(0, 64)}`;
   if (!r?.ok) { img.hidden = true; return; }
   const next = URL.createObjectURL(await r.blob());
-  img.onload = () => { if (frameUrl) URL.revokeObjectURL(frameUrl); frameUrl = next; img.hidden = false; };
+  const [cx, cy, down] = (r.headers.get("x-screen-cursor") ?? "").split(",").map(Number);
+  img.onload = () => {
+    if (frameUrl) URL.revokeObjectURL(frameUrl); frameUrl = next; img.hidden = false;
+    if (cx == null || cy == null || Number.isNaN(cx) || !img.naturalWidth) return;
+    // The frame fills the screen from its top left corner, so the cursor scales the same way.
+    const scale = Math.max(img.clientWidth / img.naturalWidth, img.clientHeight / img.naturalHeight), x = cx * img.naturalWidth * scale, y = cy * img.naturalHeight * scale;
+    moveTo(x, y); if (down === 1 && !pressed) click(x, y); pressed = down === 1;
+  };
   img.src = next;
 }
 export default function mount() {
@@ -171,7 +180,7 @@ export default function mount() {
   };
   const onClick = (e: Event) => { const b = (e.target as HTMLElement).closest("[data-mint]") as HTMLElement | null; if (b?.dataset.mint) { handsOffUntil = Date.now() + 30_000; void ask("solard:open", { mint: b.dataset.mint! }); } };
   const hands = () => { handsOffUntil = Date.now() + 30_000; };
-  void showBrowser(); const browserTimer = setInterval(() => void showBrowser(), 2_000);
+  void showBrowser(); const browserTimer = setInterval(() => void showBrowser(), 1_000);
   new ResizeObserver(fit).observe($("screen")); window.addEventListener("message", onMessage); window.addEventListener("resize", fit); $("history").addEventListener("click", onClick);
   $("screen").addEventListener("mouseenter", hands); $("screen").addEventListener("mouseleave", hands);
   void pullBots();
