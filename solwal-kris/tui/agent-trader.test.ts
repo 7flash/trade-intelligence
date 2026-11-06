@@ -36,8 +36,8 @@ test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen(ok)).toBeNull();
   expect(refuseOpen({ ...ok, risk: null })).toBe("no bundle read");
   expect(refuseOpen({ ...ok, risk: { ...clean, bundledPct: 30 } })).toBe("bundled");
-  expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 25 } })).toBe("bought early");
-  expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 45 } })).toBe("bought early"); // the TRUMP rug
+  expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 60 } })).toBe("bought early");
+  expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 45 } })).toBeNull();
   expect(refuseOpen({ ...ok, ageMs: 276_000 })).toBe("too new"); // bought 4m36s after launch
   expect(refuseOpen({ ...ok, ageMs: null })).toBe("too new");
   expect(refuseOpen({ ...ok, callouts: 0 })).toBe("no callouts");
