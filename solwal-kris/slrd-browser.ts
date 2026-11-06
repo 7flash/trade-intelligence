@@ -111,7 +111,7 @@ async function read(stop: TourStop) {
   writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: Date.now(), stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
-    callout: stop === "callout" ? safeFacts(posted, 10) : [] }));
+    callout: stop === "callout" ? safeFacts(posted, 10) : [], plan: card ? nextRange(card, (buy, sell) => slotPlan(buy, sell).steps) : null }));
 }
 setInterval(async () => {
   if (wasBlocked) return;
