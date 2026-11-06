@@ -161,7 +161,7 @@ async function postCallout(job: CalloutJob) {
   log(`callout filled: ${JSON.stringify(form).slice(0, 300)}`);
   if (job.dry || !form?.send || form.send.off || form.written < 5) { await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); return log(`callout ${job.mint.slice(0, 6)}: ${job.dry ? "dry, not posted" : "no send button"}`); }
   await realClick(form.send, form);
-  log(`callout posted on ${job.mint.slice(0, 6)}`); await sleep(3_000);
+  log(`callout posted on ${job.mint.slice(0, 6)}: ${job.text}`); await sleep(3_000);
   log(`after callout: ${await value(afterPressScript) ?? ""}`);
 }
 const readBox = async () => JSON.parse(await value(tradeBoxScript) ?? "null") as TradeBox | null;

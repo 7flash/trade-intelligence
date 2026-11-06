@@ -31,7 +31,7 @@ test("sizes the whole balance over the slots left, above the reserve, up to the 
   expect(agentSize(0.63, 0)).toBe(0.025); // a small balance still buys, at about $2
   expect(agentSize(0.12, 0)).toBe(0);
 });
-const clean: CoinRisk = { bundledPct: 5, earlyBoughtPct: 10, top10Pct: 20, goodHolders: 0 }, ok = { risk: clean, capUsd: 50_000, held: false, closedAgoMs: null, size: 0.05, ageMs: 3_600_000, callouts: 4 };
+const clean: CoinRisk = { bundledPct: 5, earlyBoughtPct: 10, top10Pct: 20, goodHolders: 0, devFunded: 0 }, ok = { risk: clean, capUsd: 50_000, held: false, closedAgoMs: null, size: 0.05, ageMs: 3_600_000, callouts: 4, top10HeldPct: 12 };
 test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen(ok)).toBeNull();
   expect(refuseOpen({ ...ok, risk: null })).toBe("no bundle read");
@@ -41,10 +41,19 @@ test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen({ ...ok, ageMs: 276_000 })).toBe("too new"); // bought 4m36s after launch
   expect(refuseOpen({ ...ok, ageMs: null })).toBe("too new");
   expect(refuseOpen({ ...ok, callouts: 0 })).toBe("no callouts");
+  expect(refuseOpen({ ...ok, risk: { ...clean, devFunded: 50 } })).toBe("dev funded wallets"); // the SOLMOURN rug
+  expect(refuseOpen({ ...ok, top10HeldPct: 40 })).toBe("top heavy");
+  expect(refuseOpen({ ...ok, top10HeldPct: null })).toBe("no holder read");
   expect(refuseOpen({ ...ok, held: true })).toBe("already held");
   expect(refuseOpen({ ...ok, size: 0 })).toBe("no slot or no SOL");
   expect(refuseOpen({ ...ok, capUsd: 3_000 })).toBe("cap too small");
   expect(refuseOpen({ ...ok, closedAgoMs: 60_000 })).toBe("closed recently");
+});
+test("wallets the creator funded count, from clusters or transfers", () => {
+  const dev = "FK6ie", base = { creator: dev, wallets: [] };
+  expect(coinRisk({ ...base, clusters: [{ source: dev, members: 50 }] }, 0).devFunded).toBe(50);
+  expect(coinRisk({ ...base, transfers: [{ from: [dev] }, { from: ["other"] }] }, 0).devFunded).toBe(1);
+  expect(coinRisk({ ...base, clusters: [{ source: "other", members: 9 }] }, 0).devFunded).toBe(0);
 });
 test("unknown early buying counts as bundled", () => expect(coinRisk({ wallets: [] }, 0).earlyBoughtPct).toBe(100));
 test("a range around the cap, in steps the size can really send", () => {

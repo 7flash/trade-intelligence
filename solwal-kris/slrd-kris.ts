@@ -115,16 +115,16 @@ const readOwn = () => { try { return JSON.parse(readFileSync(ownPath, "utf8")) a
 /** Everything he decides from: the numbers on the page, bundles and supply from the terminal, and the limits. */
 async function weigh(mint: string) {
   const r = await fetch(`http://127.0.0.1:5176/api/coin?mint=${mint}&watch=0`, { headers: { cookie: `slrd_web=${token}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
-  const info = r?.ok ? await r.json() as { recent?: BuyRow[]; earlyBoughtPct?: number | null; exact?: boolean; capUsd?: number | null; launchedAtMs?: number | null; wallets?: { pct: number; ours?: boolean; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] } : null;
+  const info = r?.ok ? await r.json() as { recent?: BuyRow[]; earlyBoughtPct?: number | null; exact?: boolean; capUsd?: number | null; launchedAtMs?: number | null; creator?: string | null; clusters?: { source?: string; members?: number }[]; transfers?: { from?: string[] }[]; wallets?: { pct: number; ours?: boolean; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] } : null;
   const risk = info ? coinRisk(info, bundleShare(info.recent ?? [])) : null, book = await agentBook().catch(() => null), opened = readOwn()[mint];
   const size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, capUsd = info?.capUsd ?? null, ageMs = info?.launchedAtMs ? Date.now() - info.launchedAtMs : null;
   if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
-  return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0 }) : "off" };
+  return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0, top10HeldPct: heldTop.get(mint) ?? null }) : "off" };
 }
 async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null }) {
   const talk = (b.callouts as { whatCallersSay?: string[] } | null | undefined)?.whatCallersSay;
   if (talk?.length) callerTalk.set(b.mint, talk);
-  calloutCount.set(b.mint, (b.callouts as { posts?: number } | null | undefined)?.posts ?? 0);
+  calloutCount.set(b.mint, (b.callouts as { posts?: number } | null | undefined)?.posts ?? 0); heldTop.set(b.mint, b.top10HeldPct ?? null);
   const w = await weigh(b.mint).catch(() => null);
   think(ev, { looking: b.stop === "callout" ? "a coin someone called out, with their position and profit" : b.stop === "screener" ? "a live coin you spotted moving, before most people" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, callouts: b.callouts ?? undefined, ...(w?.risk ?? {}), top10HeldPct: b.top10HeldPct ?? undefined, canOpen: w?.refused === null });
 }
@@ -141,7 +141,7 @@ async function openOwn(mint: string) {
 /** One public callout per position, right after its first buy, from what he already wrote about it. */
 const calledPath = resolve(dot, "kris-called.json"), wantCallout = new Set<string>();
 let called = new Set<string>(); try { called = new Set(JSON.parse(readFileSync(calledPath, "utf8")) as string[]); } catch {}
-const callerTalk = new Map<string, string[]>(), calloutCount = new Map<string, number>();
+const callerTalk = new Map<string, string[]>(), calloutCount = new Map<string, number>(), heldTop = new Map<string, number | null>();
 async function composeCallout(symbol: string | null, myRead: string, whatCallersSay: string[]) {
   let text = "";
   for await (const chunk of streamLLM([{ role: "system", content: CALLOUT_SYSTEM }, { role: "user", content: JSON.stringify({ coin: symbol, myRead, whatCallersSay }) }], { timeoutMs: 60_000 })) text += chunk;

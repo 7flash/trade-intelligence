@@ -6,7 +6,9 @@ export const AGENT_LIMITS = { maxPositions: 30, maxSizeSol: 0.2, minSizeSol: 0.0
   /** 100 tracked coins: at 25%+ bought in the first 3s, 43% fell 30% without first rising 30%, against 14% of the rest. */
   maxEarlyPct: 25,
   /** 149 tracked coins: median -19% in the first 5 minutes, -3% from 5 to 10. */
-  minAgeMs: 300_000 };
+  minAgeMs: 300_000,
+  /** SOLMOURN, a rug, had 40%; clean coins read so far sit between 2% and 17%. A few examples, not yet a study. */
+  maxTop10Pct: 30 };
 export type Callout = { who: string; body: string; ageMin: number | null; positionUsd: number | null; profitUsd: number | null; likes: number; views: number };
 
 const money = (s?: string) => { const m = /^([+\-−]?)\$([\d,.]+)([KMB]?)/.exec(s ?? ""); if (!m) return null; return (m[1] === "-" || m[1] === "−" ? -1 : 1) * Number(m[2]!.replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[3]!] ?? 1); };
@@ -44,10 +46,11 @@ export function calloutSignals(posts: Callout[]) {
     oneCallerSharePct: Math.round(most / posts.length * 100), topViews: Math.max(...posts.map(p => p.views)), themes: Object.fromEntries(Object.entries(THEMES).map(([k, re]) => [k, posts.filter(p => re.test(p.body)).length])) };
 }
 
-export type CoinRisk = { bundledPct: number; earlyBoughtPct: number; top10Pct: number | null; goodHolders: number };
-export function coinRisk(info: { recent?: unknown[]; earlyBoughtPct?: number | null; exact?: boolean; wallets?: { pct: number; ours?: unknown; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] }, share: number): CoinRisk {
+export type CoinRisk = { bundledPct: number; earlyBoughtPct: number; top10Pct: number | null; goodHolders: number; devFunded: number };
+export function coinRisk(info: { recent?: unknown[]; earlyBoughtPct?: number | null; exact?: boolean; creator?: string | null; clusters?: { source?: string; members?: number }[]; transfers?: { from?: string[] }[]; wallets?: { pct: number; ours?: unknown; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] }, share: number): CoinRisk {
   const tops = (info.wallets ?? []).filter(w => w.pct > 0 && !w.ours).map(w => w.pct).sort((a, b) => b - a).slice(0, 10);
-  return { bundledPct: Math.round(share * 100), earlyBoughtPct: Math.round(info.earlyBoughtPct ?? 100), top10Pct: info.exact ? Math.round(tops.reduce((a, b) => a + b, 0)) : null, goodHolders: goodHolders(info.wallets ?? []) };
+  return { bundledPct: Math.round(share * 100), earlyBoughtPct: Math.round(info.earlyBoughtPct ?? 100), top10Pct: info.exact ? Math.round(tops.reduce((a, b) => a + b, 0)) : null, goodHolders: goodHolders(info.wallets ?? []),
+    devFunded: (info.clusters ?? []).filter(c => c.source === info.creator).reduce((a, c) => a + (c.members ?? 0), 0) + (info.transfers ?? []).filter(t => info.creator && t.from?.includes(info.creator)).length };
 }
 
 /** The share of supply the top holders own, from the numbers in pump.fun's Holders tab: each row shows its percent, sometimes twice. */
@@ -64,13 +67,16 @@ export function agentSize(freeSol: number, open: number, l = AGENT_LIMITS) {
   return Math.floor(Math.max(l.minSizeSol, Math.min(l.maxSizeSol, spare / slots)) * 1000) / 1000;
 }
 /** Why he may not open this coin, or null. No answer on bundles means no buy. */
-export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; held: boolean; closedAgoMs: number | null; size: number; ageMs: number | null; callouts: number }, l = AGENT_LIMITS) {
+export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; held: boolean; closedAgoMs: number | null; size: number; ageMs: number | null; callouts: number; top10HeldPct?: number | null }, l = AGENT_LIMITS) {
   if (o.held) return "already held";
   if (!o.size) return "no slot or no SOL";
   if (!o.capUsd || o.capUsd < l.minCapUsd) return "cap too small";
   if (!o.risk) return "no bundle read";
   if (o.risk.bundledPct >= SLOT_CONFIG.maxBundleShare * 100) return "bundled";
+  if (o.risk.devFunded > 0) return "dev funded wallets"; // the creator seeded other wallets: the bundle the trades do not show
   if (o.risk.earlyBoughtPct >= l.maxEarlyPct) return "bought early";
+  if (o.top10HeldPct == null) return "no holder read";
+  if (o.top10HeldPct >= l.maxTop10Pct) return "top heavy";
   if (o.ageMs == null || o.ageMs < l.minAgeMs) return "too new";
   if (!o.callouts) return "no callouts"; // nobody has put their name on it yet
   if (o.closedAgoMs != null && o.closedAgoMs < l.reopenAfterMs) return "closed recently";
