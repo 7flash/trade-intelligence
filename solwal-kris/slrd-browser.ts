@@ -66,8 +66,9 @@ const press = async () => { pointer.down = 1; await sleep(1_050); pointer.down =
 const scroll = () => cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: 760, y: 430, deltaX: 0, deltaY: 500 });
 async function latestTrade() {
   const ov: any = await fetch(`${view}/api/overview`, { headers: { cookie: `slrd_web=${bridgeToken}` }, signal: AbortSignal.timeout(10_000) }).then(r => r.json()).catch(() => null);
-  const pump = (ov?.bots ?? []).filter((b: any) => !b.inactive && b.lastTradeAtMs).sort((a: any, b: any) => b.lastTradeAtMs - a.lastTradeAtMs)[0];
-  return pump ? { mint: pump.mint as string, at: pump.lastTradeAtMs as number } : null;
+  const newest = (b: any) => Math.max(b.lastTradeAtMs ?? 0, b.addedAt ?? 0); // a new range counts too: he goes and looks
+  const pump = (ov?.bots ?? []).filter((b: any) => !b.inactive && newest(b)).sort((a: any, b: any) => newest(b) - newest(a))[0];
+  return pump ? { mint: pump.mint as string, at: newest(pump) as number } : null;
 }
 lastTrade = (await latestTrade())?.at ?? 0;
 async function visit() {

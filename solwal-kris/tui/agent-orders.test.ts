@@ -2,6 +2,8 @@ import { afterEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { lastFill } from "../webapp/public/kris-events.ts";
+import { tradedFromLog } from "./fill-log.ts";
 import { executionOn, nextOrder, ORDER_MS, orderDesk, readOrder, runOrder, writeOrder, type OrderDesk } from "./agent-orders.ts";
 
 const roots: string[] = [];
@@ -49,4 +51,10 @@ test("the browser takes the oldest open order and never a stale one", () => {
   writeOrder(r, { ...base, id: "new", at: 5_000 }); writeOrder(r, { ...base, id: "old", at: 1_000 }); writeOrder(r, { ...base, id: "gone", at: 0, state: "cancelled" });
   expect(nextOrder(r, 6_000)?.id).toBe("old");
   expect(nextOrder(r, 5_000 + ORDER_MS)).toBeNull();
+});
+test("an agent fill reads as a normal fill, so thoughts and volume count it", () => {
+  const line = "2026-11-06T12:00:00.000Z annotation target w m: BUY confirmed CONFIRMED -0.0110 SOL  
+";
+  expect(lastFill(line)?.side).toBe("BUY");
+  expect(tradedFromLog(line).trades).toBe(1);
 });

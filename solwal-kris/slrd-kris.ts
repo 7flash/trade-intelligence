@@ -222,12 +222,12 @@ for (;;) {
     if (seeded) thinkOnBrowsing(ov.bots.filter(b => !(b as { inactive?: boolean }).inactive).length);
     for (const b of ov.bots.filter(x => !(x as { inactive?: boolean }).inactive)) {
       const at = b.lastTradeAtMs ?? 0, prev = seenTrade.get(b.mint);
-      if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); }
+      if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "a new range was added and you now follow it", ...facts(b) }); }
       seenBots.add(b.mint);
       if (seeded && at && at > (prev ?? 0)) {
         const path = resolve(dot, `term-${b.wallet}-${b.mint}.log`), fill = existsSync(path) ? lastFill(readFileSync(path, "utf8")) : null;
         const ev = add({ atMs: at, kind: "trade", mint: b.mint, symbol: b.symbol ?? null, title: tradeTitle(fill), reaction: tradeReaction(fill?.side ?? null, b.holdingSteps ?? 0, b.pnl ?? 0) ?? undefined });
-        if (ev && fill?.side === "SELL") void think(ev, { event: "sold", sol: fill?.sol ?? null, ...facts(b) });
+        if (ev && fill) void think(ev, { event: fill.side === "SELL" ? "sold" : "bought", sol: fill.sol, ...facts(b) });
       }
       if (at) seenTrade.set(b.mint, Math.max(at, prev ?? 0));
       if (b.capUsd && b.range) {
@@ -236,7 +236,7 @@ for (;;) {
         if (side === was) pendingSide.delete(b.mint); else if (pendingSide.get(b.mint)?.side !== side) pendingSide.set(b.mint, { side, at: now });
         const settled = (pendingSide.get(b.mint)?.at ?? now) <= now - 20_000 && now - (reportedAt.get(b.mint) ?? 0) >= 120_000;
         if (seeded && was && was !== side && settled) {
-          reportedAt.set(b.mint, now); pendingSide.delete(b.mint); const ev = add({ atMs: Date.now(), kind: "range", mint: b.mint, symbol: b.symbol ?? null, title: rangeTitle(side, b.capUsd, b.range), reaction: side === "inside" ? undefined : "hold" }); }
+          reportedAt.set(b.mint, now); pendingSide.delete(b.mint); const ev = add({ atMs: Date.now(), kind: "range", mint: b.mint, symbol: b.symbol ?? null, title: rangeTitle(side, b.capUsd, b.range), reaction: side === "inside" ? undefined : "hold" }); if (ev) void think(ev, { event: side === "inside" ? "price came back inside your range" : `price is now ${side} your range`, ...facts(b) }); }
         if (!was || settled) sides.set(b.mint, side);
       }
     }
