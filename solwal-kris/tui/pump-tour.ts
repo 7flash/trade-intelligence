@@ -59,3 +59,27 @@ export function nextRange(p: Panel, steps: (buy: number, sell: number) => number
   return { ...p, buy, sell, steps: steps(buy, sell) };
 }
 
+/** Where the site's trade box is on a coin page, in window pixels. Text from the page is only ever matched here. */
+export const tradeBoxScript = `(() => {
+  const shown = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+  const at = e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  const input = [...document.querySelectorAll('input[inputmode="decimal"]')].find(shown); if (!input) return "null";
+  let box = input; while (box.parentElement && !(box.innerText || "").split("\\n").some(l => l.trim() === "Sell")) box = box.parentElement;
+  const tab = word => [...box.querySelectorAll("button,[role=tab],div,span")].filter(shown).find(e => e.children.length === 0 && e.textContent.trim() === word);
+  const after = [...box.querySelectorAll("button")].filter(b => shown(b) && input.compareDocumentPosition(b) & 4 && b.getBoundingClientRect().width > 150);
+  const main = after.find(b => /^(buy|sell|place|connect|log in|sign in)/i.test(b.textContent.trim()));
+  const buy = tab("Buy"), sell = tab("Sell");
+  return JSON.stringify({ wide: innerWidth, high: innerHeight, dollars: (box.innerText || "").split("\\n").some(l => l.trim() === "$"), value: input.value, input: at(input),
+    buy: buy && at(buy), sell: sell && at(sell), main: main ? { ...at(main), text: main.textContent.trim().slice(0, 40), off: main.disabled } : null });
+})()`;
+export type TradeBox = { wide: number; high: number; dollars: boolean; value: string; input: { x: number; y: number }; buy: { x: number; y: number } | null; sell: { x: number; y: number } | null; main: { x: number; y: number; text: string; off: boolean } | null };
+/** Why the main button must not be pressed, or null when it may. Only a button that says this side's trade qualifies. */
+export function refuseMain(box: TradeBox, side: "buy" | "sell", amountUsd: number) {
+  if (!box.dollars) return "amount is not in dollars";
+  if (Math.abs(Number(box.value) - amountUsd) > 0.005) return `amount shows ${box.value}`;
+  if (!box.main) return "no trade button";
+  if (/connect|log in|sign in/i.test(box.main.text)) return "not signed in";
+  if (box.main.off) return "trade button is off";
+  if (!new RegExp(`^(${side}|place)`, "i").test(box.main.text)) return `button says ${box.main.text}`;
+  return null;
+}

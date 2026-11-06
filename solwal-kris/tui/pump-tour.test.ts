@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { capOf, nextRange, panelScript, pickCoin, rangeAt, remember, safeFacts, safeName, trendingRow } from "./pump-tour.ts";
+import { refuseMain, capOf, nextRange, panelScript, pickCoin, rangeAt, remember, safeFacts, safeName, trendingRow } from "./pump-tour.ts";
 
 const a = "EFWotn2UtV2cAAAAAAAAAAAAAAAAAAAAAAAAAApump", b = "GdY4Z6pYUcr3AAAAAAAAAAAAAAAAAAAAAAAAAApump", c = "C5xph2yL6gMdAAAAAAAAAAAAAAAAAAAAAAAAAApump";
 const hrefs = [`/coin/${a}`, `/coin/${b}`, `/coin/${c}?highlight_callout=49044925-1581-4a3b`, "/coin/imeme.nearlytrade.near?highlight_callout=c629", "/coin/0x94641b9701aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "/perps", "https://evil.example/coin/x"];
@@ -65,3 +65,15 @@ test("a coin above the plan gets a range around its own cap; a live bot is never
   expect(nextRange({ ...plan, cap: null }, () => 8)).toBeNull();
 });
 
+const box = { wide: 1480, high: 1125, dollars: true, value: "12.5", input: { x: 1, y: 1 }, buy: { x: 1, y: 1 }, sell: { x: 1, y: 1 }, main: { x: 1, y: 1, text: "Buy", off: false } };
+test("the trade button is pressed only on the right side, amount and unit", () => {
+  expect(refuseMain(box, "buy", 12.5)).toBeNull();
+  expect(refuseMain({ ...box, main: { ...box.main, text: "Place trade" } }, "sell", 12.5)).toBeNull();
+  expect(refuseMain({ ...box, main: { ...box.main, text: "Connect wallet to trade" } }, "buy", 12.5)).toBe("not signed in");
+  expect(refuseMain({ ...box, main: { ...box.main, text: "Log in to trade" } }, "buy", 12.5)).toBe("not signed in");
+  expect(refuseMain(box, "sell", 12.5)).toBe("button says Buy");
+  expect(refuseMain({ ...box, dollars: false }, "buy", 12.5)).toBe("amount is not in dollars");
+  expect(refuseMain({ ...box, value: "125" }, "buy", 12.5)).toBe("amount shows 125");
+  expect(refuseMain({ ...box, main: null }, "buy", 12.5)).toBe("no trade button");
+  expect(refuseMain({ ...box, main: { ...box.main, off: true } }, "buy", 12.5)).toBe("trade button is off");
+});

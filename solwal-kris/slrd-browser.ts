@@ -1,10 +1,11 @@
 /** A real browser window on pump.fun, shown on Kris's monitor. It looks around: Trending, Hot callouts and his own
- * positions, and jumps to a coin when it trades. It holds no wallet, never signs in and clicks only coin and home links.
- * Trades still go through the terminal. The Cloudflare check is left for a person to click. */
+ * positions, and jumps to a coin when it trades. It clicks only coin and home links, and in agent mode the
+ * trade box of the coin an order names (tui/agent-orders.ts). Signing in and the Cloudflare check are left for a person. */
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { capOf, nextRange, panelScript, pickCoin, rangeAt, remember, safeFacts, safeName, TOUR, trendingRow, usd, type Panel, type TourStop } from "./tui/pump-tour.ts";
+import { capOf, nextRange, panelScript, pickCoin, rangeAt, refuseMain, remember, safeFacts, safeName, TOUR, tradeBoxScript, trendingRow, usd, type Panel, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
+import { nextOrder, readOrder, writeOrder, type AgentOrder } from "./tui/agent-orders.ts";
 import { SLOT_CONFIG, slotPlan } from "./tui/kris-slots.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
@@ -47,6 +48,7 @@ await cdp("Page.enable");
 log("browser open on pump.fun");
 
 
+const root = import.meta.dir; let ordering = false;
 let here = HOME, wasBlocked = false, lastTrade = 0, step = 0, recent: string[] = [];
 const STOP_MS = 26_000, PORTFOLIO = `https://pump.fun/profile/${KRIS_WALLET}`;
 const value = async (expression: string) => (await cdp("Runtime.evaluate", { expression, returnByValue: true }))?.result?.value;
@@ -120,8 +122,49 @@ async function read(stop: TourStop) {
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
     callout: stop === "callout" ? safeFacts(posted, 10) : [], plan: card ? nextRange(card, (buy, sell) => slotPlan(buy, sell).steps) : null }));
 }
+/** A real mouse click, with Kris's cursor on the stream going there first. */
+async function realClick(at: { x: number; y: number }, box: TradeBox) {
+  pointer.x = at.x / box.wide; pointer.y = at.y / box.high; await sleep(1_100);
+  const m = { x: at.x, y: at.y, button: "left", clickCount: 1 };
+  await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+  pointer.down = 1;
+  await cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...m }); await sleep(70);
+  await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...m }); await sleep(400);
+  pointer.down = 0;
+}
+const readBox = async () => JSON.parse(await value(tradeBoxScript) ?? "null") as TradeBox | null;
+/** Opens the coin and fills in the trade box. The main button is pressed only if every check passes. */
+async function pressOrder(o: AgentOrder) {
+  const fail = (note: string) => { writeOrder(root, { ...o, state: "failed", note }); log(`order ${o.side} ${o.mint.slice(0, 6)}: ${note}`); };
+  writeOrder(root, { ...o, state: "pressing" });
+  const url = coinPage(o.mint); if (url === HOME) return fail("bad coin");
+  cardRun++; await value(panelScript(null));
+  await go(url);
+  let box: TradeBox | null = null;
+  for (let i = 0; i < 24 && !box; i++) { await sleep(500); if ((await value("location.pathname")) === `/coin/${o.mint}`) box = await readBox(); }
+  if (!box) return fail("no trade box");
+  await value("scrollTo(0, 0)"); await sleep(300); box = await readBox() ?? box;
+  const tab = box[o.side]; if (!tab) return fail(`no ${o.side} tab`);
+  await realClick(tab, box); await sleep(400);
+  box = await readBox(); if (!box) return fail("trade box went away");
+  await realClick(box.input, box);
+  await value(`document.querySelector('input[inputmode="decimal"]:focus')?.select()`);
+  await cdp("Input.insertText", { text: o.amountUsd.toFixed(2) }); await sleep(600);
+  box = await readBox(); if (!box) return fail("trade box went away");
+  const why = refuseMain(box, o.side, o.amountUsd); if (why) return fail(why);
+  if (o.dry) return fail(`dry: would press ${box.main!.text} for $${box.value}`);
+  if (readOrder(root, o.id)?.state !== "pressing") return log("order ended before the press");
+  await realClick(box.main!, box);
+  writeOrder(root, { ...o, state: "pressed" }); log(`pressed ${box.main!.text}: ${o.side} $${o.amountUsd} of ${o.mint.slice(0, 6)}`);
+}
 setInterval(async () => {
-  if (wasBlocked) return;
+  if (ordering || wasBlocked) return;
+  const o = nextOrder(root); if (!o) return;
+  ordering = true;
+  await pressOrder(o).catch(e => writeOrder(root, { ...o, state: "failed", note: String(e).slice(0, 80) })).finally(() => { ordering = false; });
+}, 1_000);
+setInterval(async () => {
+  if (wasBlocked || ordering) return;
   const trade = await latestTrade();
   if (trade && trade.at > lastTrade) { lastTrade = trade.at; recent = remember(recent, `/coin/${trade.mint}`); return go(coinPage(trade.mint)); }
   const stop = TOUR[step % TOUR.length]!;
