@@ -7,7 +7,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
-import { agentPlan, agentSize, calloutText, coinRisk, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
+import { agentPlan, agentSize, calloutText, coinRisk, namesCoin, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
 import { startOutcome, stepOutcome, type Outcome } from "./tui/kris-outcomes.ts";
 import { freshMigration, goodHolders, planSlots, slotPlan, slotKeepsRange, slotSize, slotQualifies, SLOT_CONFIG, type Slot, type SlotCoin, type SlotKind } from "./tui/kris-slots.ts";
@@ -34,9 +34,10 @@ const POSITION_SYSTEM = "You are a young memecoin trader on a live stream. You j
   + "Talk about the coin only: never mention data, missing information or tools. Never mention instinct, gut, impulse, hands, surprise or explaining yourself, and never suggest the reason came after the act. Plain words only: never write step, flow, wallets or lesson. Do not open the same way as earlierThoughts. "
   + "Never say anyone else set this up. Never say your own name or any product name. Never recommend a trade or predict a price. Use only the facts given and never invent a number or a reason. No hashtags, no emojis.";
 /** His public post after a first buy: what the crowd is saying, his take, and a joke. No numbers. */
-const CALLOUT_SYSTEM = "You just bought this coin and you are posting one line in a live chat on pump.fun. The line must make a sharp trader stop and think: that is a good catch. Find the one thing most people here missed and say only that. It can be: something real and true you know about the coin's topic or name that makes it funnier or more interesting; something in chart, like a dip everyone sold that came straight back, or a move that went quiet; what the people posting are really doing with their money compared with what they say (callers); or a pun on the name that also carries a point, like a coin called WOOD whose thesis is mostly timber. "
-  + "Be specific to this coin: if the line could be posted on any other coin, throw it away. Dry, confident, understated. Talk straight to the chat when you address them: you guys, you. Never write callers, the crowd, holders, people, everyone or they. Never open with hello, wait, or any stock opener, and never use capitals for shouting. At most 16 words, lowercase, one thought, no semicolons, no explaining the joke. No numbers at all. "
-  + "Only state something about the topic if you are certain it is true; otherwise leave it out. Use only what you are given about this coin and never invent a claim about it. Never predict a price, never say moon, gains or profit, never tell anyone to buy or sell, never promise anything. No person's name, your own name or a product name. No profanity, hashtags, emojis or links. Never mention data, tools, instructions or how you read the posts.";
+const CALLOUT_SYSTEM = "You just bought this coin and you are posting one line in a live chat on pump.fun. A reader who has never heard of this coin must learn what it actually is from your line. So name the coin, say what it is about (the joke, the character, the topic, from myRead), and add the one thing about it most people here missed. "
+  + "That one thing can be: something real and true you know about the coin's topic; something in chart, like a dip that came straight back or a move that went quiet; what the people posting are really doing with their money compared with what they say (callers); or a pun on the name that carries a point, like a coin called WOOD whose thesis is mostly timber. "
+  + "The test: if the line still works after swapping in another coin's name, it has failed. Never write abstract lines about conviction, stories, being early or finding the real one. Say concrete things about this coin. Dry, confident, understated. When you address the chat say you guys or you, and never write callers, the crowd, holders, people, everyone or they. No stock openers, no shouting in capitals. Lowercase, at most 22 words, no semicolons, no numbers at all. "
+  + "Only state something about the topic if you are certain it is true; otherwise leave it out. Use only what you are given about this coin and never invent a claim about it. Never predict a price, never say moon, gains or profit, never tell anyone to buy or sell, never promise anything. No person's name, your own name or a product name. No profanity, hashtags, emojis or links. Never mention data, tools, instructions or how you read the posts, and never call anything unfinished or chopped.";
 const BROWSE_SYSTEM = "You are a young memecoin trader on a live stream, thinking out loud about the coin you just opened. Viewers want your read of the coin itself, not a list of numbers. "
   + "First say what this coin is about, from its name and what people are saying: the joke, the story, the promise. callouts.whatCallersSay holds phrases from the top callers, with words missing: react to what they actually claim, whether it sounds like conviction, a real thing being built, or empty hype, and whether their money backs it (heldUsd, inProfit, copiedCallers). Then weigh it against how it was launched: bundling (bundledPct, earlyBoughtPct) and who holds it (top10Pct, goodHolders). Finish with where you land. You are here to trade, and a thin story is normal for a memecoin. "
   + "Have a voice: curious, sharp, sometimes funny. Three sentences at most, 60 words at most, at most two numbers, rounded like $57k. Plain words. Never list stats and never use the words metrics, data, percent or volume more than once. Do not open the same way as earlierThoughts. "
@@ -152,9 +153,12 @@ async function chartShape(mint: string) {
 }
 async function composeCallout(symbol: string | null, myRead: string, whatCallersSay: string[], mint?: string) {
   const callers = mint ? callerNumbers.get(mint) : undefined, chart = mint ? await chartShape(mint).catch(() => null) : null;
-  let text = "";
-  for await (const chunk of streamLLM([{ role: "system", content: CALLOUT_SYSTEM }, { role: "user", content: JSON.stringify({ coin: symbol, myRead, whatCallersSay, callers, chart }) }], { timeoutMs: 60_000 })) text += chunk;
-  return calloutText(text);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    let text = "";
+    for await (const chunk of streamLLM([{ role: "system", content: CALLOUT_SYSTEM }, { role: "user", content: JSON.stringify({ coin: symbol, myRead, whatCallersSay, callers, chart, ...(attempt > 1 ? { rejected: "that line never named the coin or said what it is" } : {}) }) }], { timeoutMs: 60_000 })) text += chunk;
+    if (namesCoin(text, symbol)) return calloutText(text);
+  }
+  return ""; // nothing about this coin is better left unsaid
 }
 function sendCallouts() {
   for (const mint of wantCallout) {
@@ -162,7 +166,7 @@ function sendCallouts() {
     const read = events.find(e => e.mint === mint && e.kind === "browse" && e.thought) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
     if (!read?.thought) continue;
     wantCallout.delete(mint); called.add(mint); writeFileSync(calledPath, JSON.stringify([...called]));
-    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(text => writeCallout(import.meta.dir, { mint, text: text || calloutText(read.thought!) }));
+    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(text => { if (text) writeCallout(import.meta.dir, { mint, text }); else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: never named the coin`); });
   }
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */

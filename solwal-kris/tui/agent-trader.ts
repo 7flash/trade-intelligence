@@ -89,6 +89,8 @@ export function agentPlan(capUsd: number, size: number, l = AGENT_LIMITS) {
 }
 /** A public post: no addresses and no links, whatever the model wrote. */
 export const calloutText = (s: string) => s.replace(/https?:\/\/\S+/g, "").replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "").replace(/\s+/g, " ").trim().slice(0, 280);
+/** A callout has to be about this coin: it says the name, in plain letters. */
+export const namesCoin = (text: string, symbol: string | null) => { const name = (symbol ?? "").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase(); return name.length > 0 && text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").includes(name); };
 /** The model ends an analysis with OPEN or PASS on its own line. */
 export const verdictOf = (text: string) => /(^|\n)\s*OPEN\s*$/.test(text);
 export const withoutVerdict = (text: string) => text.replace(/\s*\n?\s*(OPEN|OPE|OP|PASS|PAS|PA)\s*$/, "").trimEnd();

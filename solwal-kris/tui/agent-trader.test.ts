@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { agentPlan, agentSize, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -81,4 +81,10 @@ test("splits the tab's text into posts", () => {
 test("adds up the top holders from the Holders tab", () => {
   expect(topHoldersPct("a26.4M2.73%$7.7K2.73%+$3,202 b18.6M1.86%$922 c5M1.5%$1")).toBe(6.1);
   expect(topHoldersPct("no percent here")).toBeNull();
+});
+test("a callout that could fit any coin is refused", () => {
+  expect(namesCoin("you guys found the real one, then backed it like a footnote", "TURTUR")).toBe(false);
+  expect(namesCoin("turtur is two turtles in a trench coat", "TURTUR")).toBe(true);
+  expect(namesCoin("$Mickey still has the cheese", "Mickey")).toBe(true);
+  expect(namesCoin("anything", null)).toBe(false);
 });
