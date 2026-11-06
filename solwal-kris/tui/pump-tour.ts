@@ -61,7 +61,7 @@ export function refuseMain(box: TradeBox, side: "buy" | "sell", amountUsd: numbe
 }
 
 /** A button by its words, in window pixels. */
-export const buttonScript = (pattern: string) => `(() => { const b = [...document.querySelectorAll("button")].filter(e => ${pattern}.test((e.textContent || "").trim()) && e.getBoundingClientRect().width > 0)[0]; if (!b) return "null"; b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2, wide: innerWidth, high: innerHeight }); })()`;
+export const buttonScript = (pattern: string) => `(() => { const b = [...document.querySelectorAll("button")].filter(e => ${pattern}.test((e.textContent || "").trim()) && e.getBoundingClientRect().width > 0)[0]; if (!b) return "null"; b.scrollIntoView({ block: "nearest" }); const r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2; return JSON.stringify({ x, y, wide: innerWidth, high: innerHeight, hit: document.elementFromPoint(x, y)?.closest("button") === b }); })()`;
 /** The posts in the open Callouts tab: who and their words, for tui/agent-trader.ts to read. */
 export const calloutsScript = `(() => { const panel = [...document.querySelectorAll("[role=tabpanel]")].find(p => p.getBoundingClientRect().width > 0 && p.querySelector("[data-testid=feed-callout-card]")); if (!panel) return "[]";
   return JSON.stringify([...panel.querySelectorAll("[data-testid=feed-callout-card]")].slice(0, 30).map(e => ({ who: e.querySelector('a[href^="/profile/"]')?.getAttribute("href") ?? "", text: e.innerText || "" })).filter(p => p.who)); })()`;

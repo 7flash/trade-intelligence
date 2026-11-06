@@ -109,7 +109,15 @@ async function realClick(at: { x: number; y: number }, box: Pick<TradeBox, "wide
   await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...m, buttons: 0 }); await sleep(400);
   pointer.down = 0;
 }
-const tap = async (pattern: string) => { const at = JSON.parse(await value(buttonScript(pattern)) ?? "null"); if (!at) return false; await realClick(at, at); return true; };
+/** Presses a button only once it has stopped moving and is really what is under the cursor. The page shifts as it loads. */
+async function tap(pattern: string) {
+  const first = JSON.parse(await value(buttonScript(pattern)) ?? "null"); if (!first) return false;
+  pointer.x = first.x / first.wide; pointer.y = first.y / first.high; await sleep(1_100);
+  let last = -1, steady: { x: number; y: number; wide: number; high: number; hit: boolean } | null = null;
+  for (let i = 0; i < 16 && !steady; i++) { const now = JSON.parse(await value(buttonScript(pattern)) ?? "null"); if (now?.hit && now.y === last) steady = now; last = now?.y ?? -1; if (!steady) await sleep(300); }
+  if (!steady) return false;
+  await realClick(steady, steady, 0); return true;
+}
 /** He opens the coin's Callouts tab in front of viewers and reads every post. Only counts leave here. */
 async function readCallouts() {
   if (!(await tap("/^Callouts/"))) return null;
