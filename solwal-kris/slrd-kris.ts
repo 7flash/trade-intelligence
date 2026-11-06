@@ -17,15 +17,20 @@ const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolv
 const { streamLLM } = await import(process.env.JSX_AI_PATH ?? resolve(import.meta.dir, "..", "jsx-ai", "src", "index.ts")) as { streamLLM: (m: { role: string; content: string }[], o: { timeoutMs: number }) => AsyncIterable<string> };
 const KEEP = 100, KEEP_COINS = 100, KEEP_THOUGHTS = 500, THOUGHT_GAP_MS = 4_000;
 const SYSTEM = "You are Kris, a young trader whose memecoin positions on Solana are run by rules on the Solard terminal. You do not choose trades: the rules do. Your job is to look back honestly at how they went, thinking out loud, and you feel every result: a win makes you buzz, a loss stings, a rug makes you angry. "
-  + "Open with how this result feels in your own plain words, then say why it worked or failed, using the facts given: how long it was held, what the range caught, what the flow and holders did, and what that says about this kind of coin. End with the one lesson you take from it. "
-  + "Never recommend a trade or say what you will do next: you are reviewing, not deciding. Earlier thoughts are given so you can spot patterns across results; never repeat one or copy their mood. At most three sentences, first person, plain words. "
+  + "Say how this result feels in your own plain words, then the one thing that decided it. Never write the words lesson, flow or steps. "
+  + "Never recommend a trade or say what you will do next: you are reviewing, not deciding. Earlier thoughts are given so you can spot patterns across results; never repeat one or copy their mood. At most two sentences and 35 words, at most three numbers, rounded like $57k, first person, plain words. "
   + "Never say your own name or any product name. Your feelings are yours, but the facts are not: use only the facts given and never invent a number. Talk about the coin and the market only: never mention data, missing information, context, tools or bugs. A fact that is absent is simply not discussed. No hashtags, no emojis, no advice to the reader.";
 
+/** For what happens live: a new position, a buy or sell, the price crossing the range. Viewers read these as they happen. */
+const LIVE_SYSTEM = "You are a young memecoin trader on a live stream, talking to viewers as it happens. A range decides every buy and sell; you say what just happened to this coin and how it feels, like a person would. "
+  + "One or two short sentences, at most 25 words, at most two numbers, rounded like $57k, first person. Plain words only: bought, sold, price, range. Never write step, flow, holders, wallets, lesson, or SOL amounts unless the event is a buy or sell. "
+  + "For a new position with nothing bought yet, say it is waiting and name the price where buying starts (buysBelowUsd). For a buy or sell, say the price now against the range. Do not open the same way as earlierThoughts. "
+  + "Never say your own name or any product name. Never recommend a trade or predict a price. Use only the facts given and never invent a number. No hashtags, no emojis.";
 const BROWSE_SYSTEM = "You are Kris, a young memecoin trader killing time scrolling pump.fun, thinking out loud. React to what is on the screen like a sharp, funny degen with taste: one specific observation about these exact numbers, then a hot take or a joke. Take the mood you are given. "
   + "Never tell anyone to buy or sell, never predict a price, never say what you will trade. No person's name, not your own name, no product name, no profanity, no hashtags, no emojis. At most two short sentences, first person, plain words. Use only the numbers given and never invent one. Talk about the coins only: never mention data, pages, tools or instructions. Earlier thoughts are given so you never repeat an idea or an opening.";
 const MOODS = ["amused", "suspicious", "jealous", "impressed", "bored", "nostalgic", "smug", "baffled"];
 
-type Bot = { wallet: string; mint: string; symbol?: string | null; capUsd?: number | null; range?: { buy: number; sell: number } | null; steps?: number; holdingSteps?: number; vol1hSol?: number | null; pnl?: number; lastTradeAtMs?: number | null };
+type Bot = { wallet: string; mint: string; symbol?: string | null; capUsd?: number | null; range?: { buy: number; sell: number } | null; steps?: number; holdingSteps?: number; nextBuy?: number | null; nextSell?: number | null; vol1hSol?: number | null; pnl?: number; lastTradeAtMs?: number | null };
 type Decision = { atMs: number; mint: string; name: string; symbol?: string | null; decision: string; reason: string };
 
 let events: KrisEvent[] = []; try { events = JSON.parse(readFileSync(out, "utf8")); } catch {}
@@ -57,11 +62,12 @@ async function drainThoughts() {
   for (let job = waiting.shift(); job; job = waiting.shift()) {
     const gloomy = /burned|bruis|sting|bites|bitter|licking/i, earlier = events.filter(e => e.thought && e.id !== job.ev.id && e.kind !== "coin" && e.kind !== "migrated" && !gloomy.test(e.thought)).slice(0, 4).map(e => ({ coin: e.symbol ?? e.mint.slice(0, 6), event: e.title, thought: e.thought }));
     try {
-      const context = job.ev.kind === "coin" || job.ev.kind === "migrated" || job.ev.kind === "browse" ? null : await coinContext(job.ev.mint);
+      const live = job.ev.kind === "position" || job.ev.kind === "trade" || job.ev.kind === "range";
+      const context = live || job.ev.kind === "coin" || job.ev.kind === "migrated" || job.ev.kind === "browse" ? null : await coinContext(job.ev.mint);
       for (let attempt = 1; attempt <= 2; attempt++) try { // the Codex runtime sometimes exits mid-turn: one more try
         let text = "";
         const browsing = job.ev.kind === "browse";
-        for await (const chunk of streamLLM([{ role: "system", content: browsing ? BROWSE_SYSTEM : SYSTEM }, { role: "user", content: JSON.stringify(browsing ? { ...job.facts, earlierThoughts: earlier } : { ...job.facts, context, myRecentResults: results, oddsForCoinsLikeThese: newPairOdds(), earlierThoughts: earlier }) }], { timeoutMs: 60_000 })) {
+        for await (const chunk of streamLLM([{ role: "system", content: browsing ? BROWSE_SYSTEM : live ? LIVE_SYSTEM : SYSTEM }, { role: "user", content: JSON.stringify(browsing || live ? { ...job.facts, earlierThoughts: earlier } : { ...job.facts, context, myRecentResults: results, oddsForCoinsLikeThese: newPairOdds(), earlierThoughts: earlier }) }], { timeoutMs: 60_000 })) {
           text += chunk; job.ev.thought = browsing ? text.replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "") : text; save();
         }
         break;
@@ -100,13 +106,19 @@ async function coinContext(mint: string) {
 }
 
 const facts = (b: Bot) => ({ coin: b.symbol ?? b.mint.slice(0, 6), capUsd: b.capUsd ? Math.round(b.capUsd) : null, rangeUsd: b.range ? [b.range.buy, b.range.sell] : null,
-  steps: b.steps, stepsHeld: b.holdingSteps, volumeSolPerHour: b.vol1hSol ? Math.round(b.vol1hSol) : null, coinPnlSol: b.pnl != null ? Number(b.pnl.toFixed(4)) : null });
+  buysBelowUsd: b.nextBuy ? Math.round(b.nextBuy) : null, sellsAboveUsd: b.nextSell ? Math.round(b.nextSell) : null, holding: (b.holdingSteps ?? 0) > 0, coinPnlSol: b.pnl != null ? Number(b.pnl.toFixed(4)) : null });
 
 if (process.argv[2] === "--test") {
-  const ev: KrisEvent = { id: "test", atMs: Date.now(), kind: "trade", mint: "test", symbol: "TEST", title: "Bought 0.01 SOL" };
-  think(ev, { event: "bought", sol: 0.01, coin: "TEST", capUsd: 42000, rangeUsd: [36000, 50000], stepsHeld: 2, steps: 3 });
+  const base = { coin: "TEST", capUsd: 57_842, rangeUsd: [22_000, 66_000], buysBelowUsd: 51_333, sellsAboveUsd: null, holding: false, coinPnlSol: 0 };
+  const samples: [KrisEvent, Record<string, unknown>][] = [
+    [{ id: "t1", atMs: Date.now(), kind: "position", mint: "t1", symbol: "TEST", title: "New position" }, { event: "a new range was added and you now follow it", ...base }],
+    [{ id: "t2", atMs: Date.now(), kind: "trade", mint: "t2", symbol: "TEST", title: "Bought 0.0628 SOL" }, { event: "bought", sol: 0.0628, ...base, capUsd: 48_000, holding: true, sellsAboveUsd: 58_000 }],
+    [{ id: "t3", atMs: Date.now(), kind: "range", mint: "t3", symbol: "TEST", title: "Went below range" }, { event: "price is now below your range", ...base, capUsd: 19_000, holding: true, coinPnlSol: -0.0105 }],
+  ];
+  for (const [ev, f] of samples) think(ev, f);
   while (thinking || waiting.length) await Bun.sleep(200);
-  console.log(ev.thought ?? "no thought"); process.exit(0);
+  for (const [ev] of samples) console.log(`${ev.kind}: ${ev.thought ?? "no thought"}`);
+  process.exit(0);
 }
 
 type Coin = SlotCoin;
