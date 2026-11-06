@@ -47,7 +47,7 @@ await cdp("Page.enable");
 log("browser open on pump.fun");
 
 
-const root = import.meta.dir; let ordering = false;
+const root = import.meta.dir; let ordering = false, readAt = 0;
 let here = HOME, wasBlocked = false, lastTrade = 0, step = 0, recent: string[] = [];
 const STOP_MS = 26_000, portfolio = () => `https://pump.fun/profile/${execution(root).address ?? KRIS_WALLET}`;
 const value = async (expression: string) => (await cdp("Runtime.evaluate", { expression, returnByValue: true }))?.result?.value;
@@ -91,7 +91,8 @@ async function read(stop: TourStop) {
   const seen = JSON.parse(await value(`JSON.stringify({ title: document.title, path: location.pathname, text: document.body.innerText, coins: [...document.querySelectorAll('a[href^="/coin/"]')].filter(a => !a.getAttribute("href").includes("highlight_callout")).slice(0, 6).map(a => { let e = a; for (let i = 0; i < 4 && e && !/\\$/.test(e.innerText); i++) e = e.parentElement; return e ? e.innerText : a.innerText; }) })`) ?? "null") as { title: string; path: string; text: string; coins: string[] } | null;
   if (!seen || blocked(seen.title)) return;
   const coin = /^\/coin\//.test(seen.path), at = seen.text.indexOf("Market cap");
-  writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: Date.now(), stop, mint: coin ? seen.path.slice(6) : "",
+  const at = Date.now(); readAt = coin ? at : 0;
+  writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at, stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
     callout: stop === "callout" ? safeFacts(posted, 10) : [] }));
@@ -145,8 +146,10 @@ setInterval(async () => {
   ordering = true;
   await pressOrder(o).catch(e => writeOrder(root, { ...o, state: "failed", note: String(e).slice(0, 80) })).finally(() => { ordering = false; });
 }, 1_000);
+/** He stays on a coin until his analysis of it is written, at most 45s. */
+const analysing = () => { if (!readAt || Date.now() - readAt > 45_000) return false; try { return JSON.parse(readFileSync(resolve(dot, "kris-analysed.json"), "utf8")).at !== readAt; } catch { return true; } };
 setInterval(async () => {
-  if (wasBlocked || ordering) return;
+  if (wasBlocked || ordering || analysing()) return;
   const trade = await latestTrade();
   if (trade && trade.at > lastTrade) { lastTrade = trade.at; recent = remember(recent, `/coin/${trade.mint}`); return go(coinPage(trade.mint)); }
   const stop = TOUR[step % TOUR.length]!;

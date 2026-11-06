@@ -31,9 +31,9 @@ const POSITION_SYSTEM = "You are a young memecoin trader on a live stream. You j
   + "Give your reason from the facts: what about this coin caught you, and why this range suits it. Sound sure of your own read, but honest about what could go wrong. One or two short sentences, at most 30 words, at most two numbers, rounded like $57k, first person. "
   + "Never mention instinct, gut, impulse, hands, surprise or explaining yourself, and never suggest the reason came after the act. Plain words only: never write step, flow, wallets or lesson. Do not open the same way as earlierThoughts. "
   + "Never say anyone else set this up. Never say your own name or any product name. Never recommend a trade or predict a price. Use only the facts given and never invent a number or a reason. No hashtags, no emojis.";
-const BROWSE_SYSTEM = "You are Kris, a young memecoin trader killing time scrolling pump.fun, thinking out loud. React to what is on the screen like a sharp, funny degen with taste: one specific observation about these exact numbers, then a hot take or a joke. Take the mood you are given. "
-  + "Never tell anyone to buy or sell, never predict a price, never say what you will trade. No person's name, not your own name, no product name, no profanity, no hashtags, no emojis. At most two short sentences, first person, plain words. Use only the numbers given and never invent one. Talk about the coins only: never mention data, pages, tools or instructions. Earlier thoughts are given so you never repeat an idea or an opening.";
-const MOODS = ["amused", "suspicious", "jealous", "impressed", "bored", "nostalgic", "smug", "baffled"];
+const BROWSE_SYSTEM = "You are a young memecoin trader on a live stream. You just opened this coin and you size it up in front of viewers, using only its numbers. Say the one thing that stands out, what worries you, then your verdict: pass, or worth watching. "
+  + "Sound like someone who knows what they are looking at. Two short sentences, at most 35 words, at most three numbers, rounded like $57k, first person, plain words. Do not open the same way as earlierThoughts. "
+  + "Never tell anyone to buy or sell and never predict a price. No person's name, not your own name, no product name, no profanity, no hashtags, no emojis. Use only the numbers given and never invent one. Talk about the coin only: never mention data, pages, tools or instructions.";
 
 type Bot = { wallet: string; mint: string; symbol?: string | null; capUsd?: number | null; range?: { buy: number; sell: number } | null; steps?: number; holdingSteps?: number; nextBuy?: number | null; nextSell?: number | null; vol1hSol?: number | null; pnl?: number; lastTradeAtMs?: number | null };
 type Decision = { atMs: number; mint: string; name: string; symbol?: string | null; decision: string; reason: string };
@@ -78,22 +78,21 @@ async function drainThoughts() {
         break;
       } catch (e) { if (attempt === 2) throw e; await Bun.sleep(1_500); }
     } catch (e) { console.log(`${new Date().toISOString()} thought failed: ${String(e).slice(0, 160)}`); if (job.ev.kind === "result" || job.ev.kind === "review" || job.ev.kind === "trade") { job.ev.thought ??= job.ev.title; save(); } } // no Codex: results still reach the history
+    if (job.ev.kind === "browse") writeFileSync(analysedPath, JSON.stringify({ at: browseSeen })); // the browser may move on
     await Bun.sleep(THOUGHT_GAP_MS);
   }
   thinking = false;
 }
-/** One thought every two minutes about what the browser is showing, when nothing real is waiting. */
-const BROWSE_GAP_MS = 120_000, browsingPath = resolve(dot, "kris-browsing.json"); let browsedAt = 0, browseSeen = 0;
-function thinkOnBrowsing(openPositions: number) {
-  if (thinking || waiting.length || Date.now() - browsedAt < BROWSE_GAP_MS) return;
+/** Each coin the browser stops on gets his analysis, and the browser waits for it. */
+const browsingPath = resolve(dot, "kris-browsing.json"), analysedPath = resolve(dot, "kris-analysed.json"); let browseSeen = 0;
+function thinkOnBrowsing() {
+  if (thinking || waiting.length) return;
   let b: { at: number; stop: string; mint: string; coin: string; facts: string[]; callout: string[]; plan?: { cap: number | null; buy: number; sell: number; steps: number } | null };
   try { b = JSON.parse(readFileSync(browsingPath, "utf8")); } catch { return; }
-  if (b.at === browseSeen || Date.now() - b.at > 60_000) return;
-  browseSeen = b.at; browsedAt = Date.now();
-  const label = b.stop === "portfolio" ? "My positions" : b.stop === "home" ? "Trending" : b.coin || "Hot coin";
-  const ev = add({ atMs: Date.now(), kind: "browse", mint: b.mint, symbol: label, title: "" });
-  if (ev) think(ev, b.stop === "portfolio" ? { looking: "my own closed positions", openPositions, myRecentResults: results, mood: MOODS[Date.now() % MOODS.length] }
-    : { looking: b.stop === "home" ? "the top trending coins" : b.stop === "callout" ? "a coin someone called out, with their position and profit" : "a trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, mood: MOODS[Date.now() % MOODS.length] });
+  if (!b.mint || b.at === browseSeen || Date.now() - b.at > 45_000) return;
+  browseSeen = b.at;
+  const ev = add({ atMs: Date.now(), kind: "browse", mint: b.mint, symbol: b.coin || "Hot coin", title: "" });
+  if (ev) think(ev, { looking: b.stop === "callout" ? "a coin someone called out, with their position and profit" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined });
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */
 async function coinContext(mint: string) {
@@ -236,7 +235,7 @@ for (;;) {
     const ov = await r.json() as { bots: Bot[]; decisions?: Decision[]; coins?: Coin[]; young?: Coin[]; closedRows?: Closed[] }, decisions = ov.decisions ?? [];
     results = trackRecord(ov.closedRows ?? []);
     reviewClosed(ov.closedRows ?? [], seeded);
-    if (seeded) thinkOnBrowsing(ov.bots.filter(b => !(b as { inactive?: boolean }).inactive).length);
+    if (seeded) thinkOnBrowsing();
     for (const b of ov.bots.filter(x => !(x as { inactive?: boolean }).inactive)) {
       const at = b.lastTradeAtMs ?? 0, prev = seenTrade.get(b.mint);
       if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); }
