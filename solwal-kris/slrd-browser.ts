@@ -76,7 +76,7 @@ lastTrade = (await latestTrade())?.at ?? 0;
 async function visit() {
   const stop = TOUR[step++ % TOUR.length]!;
   if (stop === "portfolio") return go(portfolio());
-  if (stop === "home") { if (!(await click("/"))) await go(HOME); return log("looking at the front page"); }
+  if (stop === "hot" && new URL(here).pathname !== "/") { if (!(await click("/"))) await go(HOME); await sleep(2_500); } // Trending is on the front page
   const hrefs = JSON.parse(await value(`JSON.stringify([...document.querySelectorAll("a[href]")].map(a => a.getAttribute("href")))`) ?? "[]") as string[];
   const href = pickCoin(stop, hrefs, recent);
   if (!href) return visit();

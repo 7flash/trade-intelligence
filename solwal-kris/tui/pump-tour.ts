@@ -1,6 +1,7 @@
 /** Where Kris's browser goes next on pump.fun. Only the front page, Kris's own profile, and coin pages are allowed. */
 export type TourStop = "hot" | "callout" | "portfolio" | "home";
-export const TOUR: TourStop[] = ["hot", "callout", "portfolio", "home"];
+/** Coins are where he thinks, so nearly every stop is one. The front page is only passed through to pick the next. */
+export const TOUR: TourStop[] = ["hot", "callout", "hot", "callout", "hot", "callout", "portfolio"];
 const COIN = /^\/coin\/[1-9A-HJ-NP-Za-km-z]{32,44}(\?highlight_callout=[\w-]+)?$/;
 
 export const isCallout = (href: string) => href.includes("?highlight_callout=");
