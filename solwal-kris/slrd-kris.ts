@@ -128,6 +128,7 @@ async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: str
   if (b.callouts) { const { whatCallersSay: _, ...numbers } = b.callouts as Record<string, unknown>; callerNumbers.set(b.mint, numbers); }
   calloutCount.set(b.mint, (b.callouts as { posts?: number } | null | undefined)?.posts ?? 0); heldTop.set(b.mint, b.top10HeldPct ?? null);
   const w = await weigh(b.mint).catch(() => null);
+  console.log(`${new Date().toISOString()} weighed ${b.coin}: ${w ? w.refused ?? "clear" : "failed"}, cap ${Math.round(w?.capUsd ?? 0)}, early ${w?.risk?.earlyBoughtPct}, dev ${w?.risk?.devFunded}, top10 ${b.top10HeldPct}, posts ${calloutCount.get(b.mint)}, size ${w?.size}`);
   think(ev, { looking: b.stop === "callout" ? "a coin someone called out, with their position and profit" : b.stop === "screener" ? "a live coin you spotted moving, before most people" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, callouts: b.callouts ?? undefined, ...(w?.risk ?? {}), top10HeldPct: b.top10HeldPct ?? undefined, canOpen: w?.refused === null });
 }
 /** Limits are read again here: the verdict alone never spends anything. */
