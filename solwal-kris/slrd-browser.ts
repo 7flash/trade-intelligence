@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
 import { pickCoin, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, calloutsScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
 import { execution, nextCallout, nextOrder, readOrder, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
-import { calloutSignals, parseCallout } from "./tui/agent-trader.ts";
+import { calloutSignals, parseCallout, type Callout } from "./tui/agent-trader.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
 const bridgeToken = readFileSync(resolve(dot, "bridge-token"), "utf8").trim();
@@ -121,10 +121,13 @@ async function tap(pattern: string) {
 /** He opens the coin's Callouts tab in front of viewers and reads every post. Only counts leave here. */
 async function readCallouts() {
   if (!(await tap("/^Callouts/"))) return null;
-  let posts: { who: string; text: string }[] = [];
-  for (let i = 0; i < 8 && !posts.length; i++) { await sleep(700); posts = JSON.parse(await value(calloutsScript) ?? "[]"); } // they load after the tab opens
+  let posts: Callout[] = [];
+  for (let i = 0; i < 8 && !posts.length; i++) { // the panel holds the Holders list until the tab has switched, and those rows carry no age
+    await sleep(700);
+    posts = (JSON.parse(await value(calloutsScript) ?? "[]") as { who: string; text: string }[]).map(p => parseCallout(p.text, p.who)).filter(p => p.ageMin != null);
+  }
   log(`read ${posts.length} callouts`);
-  return calloutSignals(posts.map(p => parseCallout(p.text, p.who)));
+  return calloutSignals(posts);
 }
 /** One public post, in the site's own box, from the words Kris already wrote. A dry job stops before the post. */
 async function postCallout(job: CalloutJob) {
