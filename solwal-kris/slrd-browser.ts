@@ -96,13 +96,13 @@ async function read(stop: TourStop) {
     callout: stop === "callout" ? safeFacts(posted, 10) : [] }));
 }
 /** A real mouse click, with Kris's cursor on the stream going there first. */
-async function realClick(at: { x: number; y: number }, box: TradeBox) {
-  pointer.x = at.x / box.wide; pointer.y = at.y / box.high; await sleep(1_100);
+async function realClick(at: { x: number; y: number }, box: TradeBox, travel = 1_100) {
+  pointer.x = at.x / box.wide; pointer.y = at.y / box.high; await sleep(travel);
   const m = { x: at.x, y: at.y, button: "left", clickCount: 1 };
   await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
   pointer.down = 1;
-  await cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...m }); await sleep(70);
-  await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...m }); await sleep(400);
+  await cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...m, buttons: 1 }); await sleep(70);
+  await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...m, buttons: 0 }); await sleep(400);
   pointer.down = 0;
 }
 const readBox = async () => JSON.parse(await value(tradeBoxScript) ?? "null") as TradeBox | null;
@@ -122,12 +122,19 @@ async function pressOrder(o: AgentOrder) {
   await realClick(box.input, box);
   await value(`document.querySelector('input[inputmode="decimal"]:focus')?.select()`);
   await cdp("Input.insertText", { text: o.amountUsd.toFixed(2) }); await sleep(600);
+  await value("document.activeElement?.blur()"); await sleep(700); // leaving the field moves the box: a press taken mid-move goes nowhere
   box = await readBox(); if (!box) return fail("trade box went away");
-  const why = refuseMain(box, o.side, o.amountUsd); if (why) return fail(why);
-  if (o.dry) return fail(`dry: would press ${box.main!.text} for $${box.value}`);
+  const first = refuseMain(box, o.side, o.amountUsd); if (first) return fail(first);
+  pointer.x = box.main!.x / box.wide; pointer.y = box.main!.y / box.high; await sleep(1_100);
+  // The quote adds rows and moves the button, and a press on a moved button hits the wrong one: wait for it to stay put.
+  let last = -1, steady: TradeBox | null = null;
+  for (let i = 0; i < 16 && !steady; i++) { const now = await readBox(); if (now?.main && now.main.y === last) steady = now; last = now?.main?.y ?? -1; if (!steady) await sleep(300); }
+  if (!steady) return fail("trade button kept moving");
+  const why = refuseMain(steady, o.side, o.amountUsd); if (why) return fail(why);
+  if (o.dry) return fail(`dry: would press ${steady.main!.text} for $${steady.value}`);
   if (readOrder(root, o.id)?.state !== "pressing") return log("order ended before the press");
-  await realClick(box.main!, box);
-  writeOrder(root, { ...o, state: "pressed" }); log(`pressed ${box.main!.text}: ${o.side} $${o.amountUsd} of ${o.mint.slice(0, 6)}`);
+  await realClick(steady.main!, steady, 0);
+  writeOrder(root, { ...o, state: "pressed" }); log(`pressed ${steady.main!.text}: ${o.side} $${o.amountUsd} of ${o.mint.slice(0, 6)}`);
   // Stays on the coin while the trade lands, and notes what the site says. This goes to the log only.
   for (const wait of [1_000, 2_000, 3_000, 6_000]) { await sleep(wait); log(`after press: ${await value(afterPressScript) ?? ""}`); }
 }

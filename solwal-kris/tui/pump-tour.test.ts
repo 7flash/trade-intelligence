@@ -38,7 +38,7 @@ test("a trending row is its name and numbers", () => {
   expect(trendingRow("bracket\nHOT\n$0.0002242\n$224K\n\u2191 4,602.3%")).toBe("bracket: $0.0002242 $224K \u2191 4,602.3%");
 });
 
-const box = { wide: 1480, high: 1125, dollars: true, value: "12.5", input: { x: 1, y: 1 }, buy: { x: 1, y: 1 }, sell: { x: 1, y: 1 }, main: { x: 1, y: 1, text: "Buy", off: false } };
+const box = { wide: 1480, high: 1125, dollars: true, value: "12.5", input: { x: 1, y: 1 }, buy: { x: 1, y: 1 }, sell: { x: 1, y: 1 }, main: { x: 1, y: 1, text: "Buy", off: false, hit: true } };
 test("the trade button is pressed only on the right side, amount and unit", () => {
   expect(refuseMain(box, "buy", 12.5)).toBeNull();
   expect(refuseMain({ ...box, main: { ...box.main, text: "Place trade" } }, "sell", 12.5)).toBeNull();
@@ -49,4 +49,5 @@ test("the trade button is pressed only on the right side, amount and unit", () =
   expect(refuseMain({ ...box, value: "125" }, "buy", 12.5)).toBe("amount shows 125");
   expect(refuseMain({ ...box, main: null }, "buy", 12.5)).toBe("no trade button");
   expect(refuseMain({ ...box, main: { ...box.main, off: true } }, "buy", 12.5)).toBe("trade button is off");
+  expect(refuseMain({ ...box, main: { ...box.main, hit: false } }, "buy", 12.5)).toBe("something covers the trade button");
 });

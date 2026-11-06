@@ -37,16 +37,17 @@ export const tradeBoxScript = `(() => {
   let box = input; while (box.parentElement && !(box.innerText || "").split("\\n").some(l => l.trim() === "Sell")) box = box.parentElement;
   const tab = word => [...box.querySelectorAll("button,[role=tab],div,span")].filter(shown).find(e => e.children.length === 0 && e.textContent.trim() === word);
   const after = [...box.querySelectorAll("button")].filter(b => shown(b) && input.compareDocumentPosition(b) & 4 && b.getBoundingClientRect().width > 150);
-  const main = after.find(b => /^(buy|sell|place|connect|log in|sign in)/i.test(b.textContent.trim()));
+  const main = after.find(b => b.hasAttribute("data-trade-cta")) ?? after.find(b => /^(buy|sell|place|connect|log in|sign in)/i.test(b.textContent.trim()));
+  const hit = main ? (() => { const p = at(main); return document.elementFromPoint(p.x, p.y)?.closest("button") === main; })() : false;
   const buy = tab("Buy"), sell = tab("Sell");
   return JSON.stringify({ wide: innerWidth, high: innerHeight, dollars: (box.innerText || "").split("\\n").some(l => l.trim() === "$"), value: input.value, input: at(input),
-    buy: buy && at(buy), sell: sell && at(sell), main: main ? { ...at(main), text: main.textContent.trim().slice(0, 40), off: main.disabled } : null });
+    buy: buy && at(buy), sell: sell && at(sell), main: main ? { ...at(main), text: main.textContent.trim().slice(0, 40), off: main.disabled, hit } : null });
 })()`;
 /** What the site shows right after a press: open dialogs, notices, and the trade button. */
 export const afterPressScript = `JSON.stringify({ dialogs: [...document.querySelectorAll("[role=dialog]")].map(e => (e.innerText || "").slice(0, 200)),
   notices: [...document.querySelectorAll("[role=status],[role=alert],[data-sonner-toast]")].map(e => (e.textContent || "").trim().slice(0, 120)).filter(Boolean).slice(0, 4),
   buttons: [...document.querySelectorAll("button")].filter(b => b.getBoundingClientRect().width > 150 && b.getBoundingClientRect().left > innerWidth * 0.6).map(b => b.textContent.trim().slice(0, 40)).filter(Boolean).slice(0, 4) })`;
-export type TradeBox = { wide: number; high: number; dollars: boolean; value: string; input: { x: number; y: number }; buy: { x: number; y: number } | null; sell: { x: number; y: number } | null; main: { x: number; y: number; text: string; off: boolean } | null };
+export type TradeBox = { wide: number; high: number; dollars: boolean; value: string; input: { x: number; y: number }; buy: { x: number; y: number } | null; sell: { x: number; y: number } | null; main: { x: number; y: number; text: string; off: boolean; hit: boolean } | null };
 /** Why the main button must not be pressed, or null when it may. Only a button that says this side's trade qualifies. */
 export function refuseMain(box: TradeBox, side: "buy" | "sell", amountUsd: number) {
   if (!box.dollars) return "amount is not in dollars";
@@ -54,6 +55,7 @@ export function refuseMain(box: TradeBox, side: "buy" | "sell", amountUsd: numbe
   if (!box.main) return "no trade button";
   if (/connect|log in|sign in/i.test(box.main.text)) return "not signed in";
   if (box.main.off) return "trade button is off";
+  if (!box.main.hit) return "something covers the trade button";
   if (!new RegExp(`^(${side}|place)`, "i").test(box.main.text)) return `button says ${box.main.text}`;
   return null;
 }
