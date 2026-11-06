@@ -53,8 +53,7 @@ test("the browser takes the oldest open order and never a stale one", () => {
   expect(nextOrder(r, 5_000 + ORDER_MS)).toBeNull();
 });
 test("an agent fill reads as a normal fill, so thoughts and volume count it", () => {
-  const line = "2026-11-06T12:00:00.000Z annotation target w m: BUY confirmed CONFIRMED -0.0110 SOL  
-";
+  const line = "2026-11-06T12:00:00.000Z annotation target w m: BUY confirmed CONFIRMED -0.0110 SOL  ";
   expect(lastFill(line)?.side).toBe("BUY");
   expect(tradedFromLog(line).trades).toBe(1);
 });
