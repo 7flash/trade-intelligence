@@ -7,6 +7,8 @@ export const AGENT_LIMITS = { maxPositions: 30, maxSizeSol: 0.2, minSizeSol: 0.0
   maxEarlyPct: 60,
   /** 149 tracked coins: median -19% in the first 5 minutes, -3% from 5 to 10. */
   minAgeMs: 300_000,
+  /** A coin our tracker never followed has no launch reading: fine once it has outlived its launch. */
+  unknownEarlyAgeMs: 1_800_000,
   /** SOLMOURN, a rug, had 40%; clean coins read so far sit between 2% and 17%. A few examples, not yet a study. */
   maxTop10Pct: 30 };
 export type Callout = { who: string; body: string; ageMin: number | null; positionUsd: number | null; profitUsd: number | null; likes: number; views: number };
@@ -46,10 +48,10 @@ export function calloutSignals(posts: Callout[]) {
     oneCallerSharePct: Math.round(most / posts.length * 100), topViews: Math.max(...posts.map(p => p.views)), themes: Object.fromEntries(Object.entries(THEMES).map(([k, re]) => [k, posts.filter(p => re.test(p.body)).length])) };
 }
 
-export type CoinRisk = { bundledPct: number; earlyBoughtPct: number; top10Pct: number | null; goodHolders: number; devFunded: number };
+export type CoinRisk = { bundledPct: number; earlyBoughtPct: number | null; top10Pct: number | null; goodHolders: number; devFunded: number };
 export function coinRisk(info: { recent?: unknown[]; earlyBoughtPct?: number | null; exact?: boolean; creator?: string | null; clusters?: { source?: string; members?: number }[]; transfers?: { from?: string[] }[]; wallets?: { pct: number; ours?: unknown; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] }, share: number): CoinRisk {
   const tops = (info.wallets ?? []).filter(w => w.pct > 0 && !w.ours).map(w => w.pct).sort((a, b) => b - a).slice(0, 10);
-  return { bundledPct: Math.round(share * 100), earlyBoughtPct: Math.round(info.earlyBoughtPct ?? 100), top10Pct: info.exact ? Math.round(tops.reduce((a, b) => a + b, 0)) : null, goodHolders: goodHolders(info.wallets ?? []),
+  return { bundledPct: Math.round(share * 100), earlyBoughtPct: info.earlyBoughtPct == null || !(info.wallets ?? []).length ? null : Math.round(info.earlyBoughtPct), top10Pct: info.exact ? Math.round(tops.reduce((a, b) => a + b, 0)) : null, goodHolders: goodHolders(info.wallets ?? []),
     devFunded: (info.clusters ?? []).filter(c => c.source === info.creator).reduce((a, c) => a + (c.members ?? 0), 0) + (info.transfers ?? []).filter(t => info.creator && t.from?.includes(info.creator)).length };
 }
 
@@ -57,6 +59,16 @@ export function coinRisk(info: { recent?: unknown[]; earlyBoughtPct?: number | n
 export function topHoldersPct(text: string, top = 10) {
   const all = [...text.matchAll(/(\d+(?:\.\d+)?)%/g)].map(m => Number(m[1])), rows = all.filter((n, i) => n !== all[i - 1]).slice(0, top);
   return rows.length >= 3 ? Math.round(rows.reduce((a, b) => a + b, 0) * 10) / 10 : null;
+}
+
+/** Market cap and age from the coin's own page, for coins our tracker does not follow. The age sits just before the short address. */
+export function pageFacts(text: string, mint: string) {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean), m = /Market cap[\s\S]{0,12}?\$([\d,.]+)([KMB]?)/.exec(text);
+  const capUsd = m ? Number(m[1]!.replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[2]!] ?? 1) : null;
+  const short = lines.findIndex(l => l.startsWith(mint.slice(0, 4)) && l.includes("…"));
+  const age = short > 0 ? lines.slice(Math.max(0, short - 4), short).reverse().find(l => ageOf(l) != null || /^\d+mo$/.test(l) || /^\d+y$/.test(l)) : undefined;
+  const mo = age && /^(\d+)mo$/.exec(age), yr = age && /^(\d+)y$/.exec(age);
+  return { capUsd, ageMs: mo ? Number(mo[1]) * 2_592_000_000 : yr ? Number(yr[1]) * 31_536_000_000 : age ? ageOf(age)! * 60_000 : null };
 }
 
 /** The whole balance over the slots left, above the reserve, never over the cap, and never so small a step cannot send. */
@@ -74,7 +86,8 @@ export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; he
   if (!o.risk) return "no bundle read";
   if (o.risk.bundledPct >= SLOT_CONFIG.maxBundleShare * 100) return "bundled";
   if (o.risk.devFunded > 0) return "dev funded wallets"; // the creator seeded other wallets: the bundle the trades do not show
-  if (o.risk.earlyBoughtPct >= l.maxEarlyPct) return "bought early";
+  if (o.risk.earlyBoughtPct != null && o.risk.earlyBoughtPct >= l.maxEarlyPct) return "bought early";
+  if (o.risk.earlyBoughtPct == null && (o.ageMs == null || o.ageMs < l.unknownEarlyAgeMs)) return "no early read on a young coin"; // only survivors go unread
   if (o.top10HeldPct == null) return "no holder read";
   if (o.top10HeldPct >= l.maxTop10Pct) return "top heavy";
   if (o.ageMs == null || o.ageMs < l.minAgeMs) return "too new";

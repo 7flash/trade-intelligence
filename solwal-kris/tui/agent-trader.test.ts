@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { agentPlan, agentSize, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -55,7 +55,12 @@ test("wallets the creator funded count, from clusters or transfers", () => {
   expect(coinRisk({ ...base, transfers: [{ from: [dev] }, { from: ["other"] }] }, 0).devFunded).toBe(1);
   expect(coinRisk({ ...base, clusters: [{ source: "other", members: 9 }] }, 0).devFunded).toBe(0);
 });
-test("unknown early buying counts as bundled", () => expect(coinRisk({ wallets: [] }, 0).earlyBoughtPct).toBe(100));
+test("a coin we never tracked is unread, not guilty", () => {
+  expect(coinRisk({ wallets: [] }, 0).earlyBoughtPct).toBeNull();
+  const unread = { ...ok, risk: { ...clean, earlyBoughtPct: null } };
+  expect(refuseOpen({ ...unread, ageMs: 3_600_000 })).toBeNull();
+  expect(refuseOpen({ ...unread, ageMs: 600_000 })).toBe("no early read on a young coin");
+});
 test("a range around the cap, in steps the size can really send", () => {
   expect(agentPlan(50_000, 0.05)).toMatchObject({ buy: 30_000, sell: 95_000, steps: 4, budget: 0.05 });
   expect(agentPlan(50_000, 0.2).steps).toBe(6);
@@ -87,4 +92,10 @@ test("a callout that could fit any coin is refused", () => {
   expect(namesCoin("turtur is two turtles in a trench coat", "TURTUR")).toBe(true);
   expect(namesCoin("$Mickey still has the cheese", "Mickey")).toBe(true);
   expect(namesCoin("anything", null)).toBe(false);
+});
+test("reads cap and age from the coin page", () => {
+  const nl = String.fromCharCode(10), page = ["Hot callouts", "8m", "DNUT", "Krispy Kreme", "1h", "139", "CkYP…pump", "Market cap", "$49.7K", "24h vol"].join(nl);
+  expect(pageFacts(page, "CkYPxSP2")).toEqual({ capUsd: 49_700, ageMs: 3_600_000 });
+  expect(pageFacts(["BTC", "1mo", "167", "C5xp…pump", "Market cap", "$14.5M"].join(nl), "C5xph2").ageMs).toBe(2_592_000_000);
+  expect(pageFacts("nothing here", "CkYP")).toEqual({ capUsd: null, ageMs: null });
 });
