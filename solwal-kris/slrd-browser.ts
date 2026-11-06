@@ -35,7 +35,12 @@ await new Promise(r => { ws.onopen = r; });
 let id = 0;
 const waits = new Map<number, (v: any) => void>();
 ws.onmessage = e => { const m = JSON.parse(String(e.data)); waits.get(m.id)?.(m.result); waits.delete(m.id); };
-const cdp = (method: string, params: Record<string, unknown> = {}) => new Promise<any>(r => { waits.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
+// A page load can swallow the reply to a call in flight, and one lost reply must not stop the stream.
+const cdp = (method: string, params: Record<string, unknown> = {}) => new Promise<any>(r => {
+  const n = ++id, timer = setTimeout(() => { waits.delete(n); r(undefined); }, 6_000);
+  waits.set(n, v => { clearTimeout(timer); r(v); });
+  ws.send(JSON.stringify({ id: n, method, params }));
+});
 await cdp("Page.enable");
 log("browser open on pump.fun");
 
