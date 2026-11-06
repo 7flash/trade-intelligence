@@ -18,6 +18,14 @@ export function parseCallout(text: string, who: string): Callout {
     positionUsd: at >= 0 ? money(lines[at + 1]) : null, profitUsd: profit >= 0 ? money(lines[profit + 1]) : null, likes: tail[0] ?? 0, views: tail[2] ?? tail[tail.length - 1] ?? 0 };
 }
 
+/** The tab's text into posts: each starts with a name, maybe a handle, then the age. Pages of Holders have no ages. */
+export function splitCallouts(text: string, max = 30) {
+  const lines = text.split("\n"), ages = lines.flatMap((l, i) => ageOf(l.trim()) != null ? [i] : []), posts: Callout[] = [];
+  const startOf = (at: number) => { let i = at - 1; while (i >= 0 && !lines[i]!.trim()) i--; if (lines[i]?.trim().startsWith("@")) { i--; while (i >= 0 && !lines[i]!.trim()) i--; } return Math.max(0, i); };
+  for (let k = 0; k < ages.length && posts.length < max; k++) { const from = startOf(ages[k]!), to = k + 1 < ages.length ? startOf(ages[k + 1]!) : lines.length, who = lines[from]!.trim(); if (who) posts.push(parseCallout(lines.slice(from, to).join("\n"), who)); }
+  return posts;
+}
+
 const THEMES: Record<string, RegExp> = { dev: /\b(dev|devs|founder|team)\b/i, hype: /\b(moon|gem|\d+x|milly|million|send(ing)? it|lfg|runner|ape)\b/i, warning: /\b(rug|rugged|scam|honeypot|bundled?|insiders?|jeet(ed|s)?|dump(ed|ing)?)\b/i, plan: /\b(roadmap|stream|partnership|launch|utility|product|app|airdrop)\b/i };
 const shout = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 /** Only counts leave here. A caller is real when they hold a position and their words are not a copy of someone else's. */

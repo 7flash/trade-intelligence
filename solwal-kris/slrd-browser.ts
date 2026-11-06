@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
 import { pickCoin, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, calloutsScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
 import { execution, nextCallout, nextOrder, readOrder, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
-import { calloutSignals, parseCallout, type Callout } from "./tui/agent-trader.ts";
+import { calloutSignals, splitCallouts, type Callout } from "./tui/agent-trader.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
 const bridgeToken = readFileSync(resolve(dot, "bridge-token"), "utf8").trim();
@@ -122,10 +122,7 @@ async function tap(pattern: string) {
 async function readCallouts() {
   if (!(await tap("/^Callouts/"))) return null;
   let posts: Callout[] = [];
-  for (let i = 0; i < 8 && !posts.length; i++) { // the panel holds the Holders list until the tab has switched, and those rows carry no age
-    await sleep(700);
-    posts = (JSON.parse(await value(calloutsScript) ?? "[]") as { who: string; text: string }[]).map(p => parseCallout(p.text, p.who)).filter(p => p.ageMin != null);
-  }
+  for (let i = 0; i < 8 && !posts.length; i++) { await sleep(700); posts = splitCallouts(await value(calloutsScript) ?? ""); } // they load after the tab opens
   log(`read ${posts.length} callouts`);
   return calloutSignals(posts);
 }

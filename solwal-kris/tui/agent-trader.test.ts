@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { agentPlan, agentSize, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -53,4 +53,13 @@ test("the verdict is read, then dropped from what viewers see", () => {
 test("a public post has no addresses or links", () => {
   expect(calloutText("see https://x.co/a 11111111111111111111111111111111111111111111 ok")).toBe("see ok");
   expect(calloutText("hello ".repeat(100)).length).toBe(280);
+});
+test("splits the tab's text into posts", () => {
+  const a = "babyansem|@trencher|2h||Launchpad that pays fees||3|1|900|$134K| MC|Position||$7.7K||Holding|Profit|+$3,202.94|+70%||View trades|".replaceAll("|", String.fromCharCode(10));
+  const b = "pumpmqster|1m||Sick coin||73|$10.5K| MC|".replaceAll("|", String.fromCharCode(10));
+  const p = splitCallouts(a + b);
+  expect(p.map(x => x.who)).toEqual(["babyansem", "pumpmqster"]);
+  expect(p[0]).toMatchObject({ ageMin: 120, positionUsd: 7700, profitUsd: 3202.94 });
+  expect(p[1]!.positionUsd).toBeNull();
+  expect(splitCallouts("someone|26.4M|2.73%|$7.7K|".replaceAll("|", String.fromCharCode(10)))).toEqual([]);
 });
