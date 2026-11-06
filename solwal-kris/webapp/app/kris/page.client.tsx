@@ -154,6 +154,8 @@ async function pullBots() {
 let frameUrl = "";
 async function showBrowser() {
   const r = await fetch("api/screen", { cache: "no-store" }).catch(() => null), img = $("browser") as HTMLImageElement;
+  const bar = $("address") as HTMLAnchorElement, at = r?.ok ? r.headers.get("x-screen-url") : null, url = at ?? "https://solard.xyz/terminal?agent=kris";
+  bar.href = url; bar.lastChild!.textContent = ` ${url.replace(/^https:\/\//, "").slice(0, 64)}`;
   if (!r?.ok) { img.hidden = true; return; }
   const next = URL.createObjectURL(await r.blob());
   img.onload = () => { if (frameUrl) URL.revokeObjectURL(frameUrl); frameUrl = next; img.hidden = false; };

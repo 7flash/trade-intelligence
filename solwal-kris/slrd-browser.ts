@@ -1,7 +1,10 @@
-/** A real browser window on pump.fun, shown on Kris's monitor. It only looks: it holds no wallet, never signs in and
- * never clicks. Trades still go through the terminal. The Cloudflare check is left for a person to click. */
+/** A real browser window on pump.fun, shown on Kris's monitor. It looks around: Trending, Hot callouts and his own
+ * positions, and jumps to a coin when it trades. It holds no wallet, never signs in and clicks only coin and home links.
+ * Trades still go through the terminal. The Cloudflare check is left for a person to click. */
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { KRIS_WALLET } from "./tui/kris-public.ts";
+import { pickCoin, remember, TOUR } from "./tui/pump-tour.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
 const bridgeToken = readFileSync(resolve(dot, "bridge-token"), "utf8").trim();
@@ -35,17 +38,36 @@ const cdp = (method: string, params: Record<string, unknown> = {}) => new Promis
 await cdp("Page.enable");
 log("browser open on pump.fun");
 
-let here = HOME, wasBlocked = false;
-async function latestCoin() {
+let here = HOME, wasBlocked = false, lastTrade = 0, step = 0, recent: string[] = [];
+const STOP_MS = 22_000, PORTFOLIO = `https://pump.fun/profile/${KRIS_WALLET}`;
+const value = async (expression: string) => (await cdp("Runtime.evaluate", { expression, returnByValue: true }))?.result?.value;
+const go = async (url: string) => { await cdp("Page.navigate", { url }); log(`looking at ${url}`); };
+/** Clicks a link already on the page, as a person would, so the site does not reload. */
+const click = (href: string) => value(`(() => { const a = [...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)}); if (!a) return false; a.scrollIntoView({ block: "center" }); a.click(); return true; })()`);
+const scroll = () => cdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: 760, y: 430, deltaX: 0, deltaY: 500 });
+async function latestTrade() {
   const ov: any = await fetch(`${view}/api/overview`, { headers: { cookie: `slrd_web=${bridgeToken}` }, signal: AbortSignal.timeout(10_000) }).then(r => r.json()).catch(() => null);
   const pump = (ov?.bots ?? []).filter((b: any) => !b.inactive && b.lastTradeAtMs).sort((a: any, b: any) => b.lastTradeAtMs - a.lastTradeAtMs)[0];
-  return pump?.mint ?? "";
+  return pump ? { mint: pump.mint as string, at: pump.lastTradeAtMs as number } : null;
+}
+lastTrade = (await latestTrade())?.at ?? 0;
+async function visit() {
+  const stop = TOUR[step++ % TOUR.length]!;
+  if (stop === "portfolio") return go(PORTFOLIO);
+  if (stop === "home") { if (!(await click("/"))) await go(HOME); return log("looking at the front page"); }
+  const hrefs = JSON.parse(await value(`JSON.stringify([...document.querySelectorAll("a[href]")].map(a => a.getAttribute("href")))`) ?? "[]") as string[];
+  const href = pickCoin(stop, hrefs, recent);
+  if (!href) return visit();
+  recent = remember(recent, href);
+  if (await click(href)) log(`${stop}: ${href}`);
 }
 setInterval(async () => {
   if (wasBlocked) return;
-  const next = coinPage(await latestCoin());
-  if (next !== here) { here = next; await cdp("Page.navigate", { url: next }); log(`looking at ${next}`); }
-}, 30_000);
+  const trade = await latestTrade();
+  if (trade && trade.at > lastTrade) { lastTrade = trade.at; recent = remember(recent, `/coin/${trade.mint}`); return go(coinPage(trade.mint)); }
+  await visit();
+  setTimeout(() => { if (!wasBlocked) void scroll(); }, STOP_MS / 2);
+}, STOP_MS);
 
 for (;;) {
   const seen = (await cdp("Runtime.evaluate", { expression: "JSON.stringify([document.title, location.href])", returnByValue: true }))?.result?.value ?? '["",""]';
@@ -54,6 +76,7 @@ for (;;) {
   if (stop !== wasBlocked) { wasBlocked = stop; log(stop ? "Cloudflare check showing: click it in the browser window" : "check passed, streaming"); }
   if (!stop) {
     const shot = await cdp("Page.captureScreenshot", { format: "jpeg", quality: 55 });
+    here = href;
     if (shot?.data && dry) writeFileSync(resolve(dot, "screen.jpg"), Buffer.from(shot.data, "base64"));
     else if (shot?.data) {
       const r = await fetch(target, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "image/jpeg", "x-screen-url": here }, body: Buffer.from(shot.data, "base64"), signal: AbortSignal.timeout(8_000) }).catch(e => { log(`push: ${String(e).slice(0, 80)}`); return null; });
