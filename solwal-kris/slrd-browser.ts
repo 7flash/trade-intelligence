@@ -22,10 +22,12 @@ export const onPump = (url: string) => { try { return new URL(url).hostname === 
 export const blocked = (title: string) => /just a moment|security verification|attention required/i.test(title);
 
 // Its own profile with no extensions and no sync, so nothing of the owner's can load into it.
-Bun.spawn([EDGE, `--remote-debugging-port=${PORT}`, `--user-data-dir=${resolve(dot, "browser-clean")}`, "--disable-extensions", "--disable-sync", "--no-first-run", "--no-default-browser-check", "--window-size=1320,860", "about:blank"], { stdout: "ignore", stderr: "ignore" });
+const openEdge = () => Bun.spawn([EDGE, `--remote-debugging-port=${PORT}`, `--user-data-dir=${resolve(dot, "browser-clean")}`, "--disable-extensions", "--disable-sync", "--no-first-run", "--no-default-browser-check", "--window-size=1320,860", "about:blank"], { stdout: "ignore", stderr: "ignore" });
+openEdge();
 let page: { webSocketDebuggerUrl: string } | null = null;
 for (let i = 0; i < 60 && !page; i++) {
   await sleep(500);
+  if (i === 30) openEdge(); // a restart can catch the last window still closing
   // Our own tab, never one that was already open.
   page = await fetch(`http://127.0.0.1:${PORT}/json/new?${HOME}`, { method: "PUT" }).then(r => r.ok ? r.json() as Promise<{ webSocketDebuggerUrl: string }> : null).catch(() => null);
 }
