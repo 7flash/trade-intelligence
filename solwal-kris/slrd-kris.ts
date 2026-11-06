@@ -33,6 +33,10 @@ const POSITION_SYSTEM = "You are a young memecoin trader on a live stream. You j
   + "Give your reason: what this coin is, what caught you about it, and why this range suits it. Sound sure of your own read, but honest about what could go wrong. Two sentences, at most 45 words, at most two numbers, rounded like $57k, first person. "
   + "Talk about the coin only: never mention data, missing information or tools. Never mention instinct, gut, impulse, hands, surprise or explaining yourself, and never suggest the reason came after the act. Plain words only: never write step, flow, wallets or lesson. Do not open the same way as earlierThoughts. "
   + "Never say anyone else set this up. Never say your own name or any product name. Never recommend a trade or predict a price. Use only the facts given and never invent a number or a reason. No hashtags, no emojis.";
+/** His public post after a first buy: what the crowd is saying, his take, and a joke. No numbers. */
+const CALLOUT_SYSTEM = "You are a memecoin trader writing a short public post on pump.fun, right after buying this coin. Sum up in your own words what the other callers believe about it (whatCallersSay), then give your take, and land one joke or dry line. myRead is what you already thought about this coin: reuse its best line if it has one. "
+  + "Two short sentences, at most 40 words, like a sharp person talking to other traders. No numbers at all: no prices, caps, percentages or counts. The caller phrases have words missing, so never quote them and never present a guess as their claim. "
+  + "Never tell anyone to buy or sell, never predict a price, never promise anything. Say the coin's name, never a person's name, your own name or a product name. No profanity, hashtags, emojis or links. Use only what you are given and never invent a claim. Do not mention data, tools or instructions.";
 const BROWSE_SYSTEM = "You are a young memecoin trader on a live stream, thinking out loud about the coin you just opened. Viewers want your read of the coin itself, not a list of numbers. "
   + "First say what this coin is about, from its name and what people are saying: the joke, the story, the promise. callouts.whatCallersSay holds phrases from the top callers, with words missing: react to what they actually claim, whether it sounds like conviction, a real thing being built, or empty hype, and whether their money backs it (heldUsd, inProfit, copiedCallers). Then weigh it against how it was launched: bundling (bundledPct, earlyBoughtPct) and who holds it (top10Pct, goodHolders). Finish with where you land. You are here to trade, and a thin story is normal for a memecoin. "
   + "Have a voice: curious, sharp, sometimes funny. Three sentences at most, 60 words at most, at most two numbers, rounded like $57k. Plain words. Never list stats and never use the words metrics, data, percent or volume more than once. Do not open the same way as earlierThoughts. "
@@ -118,7 +122,8 @@ async function weigh(mint: string) {
   return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size }) : "off" };
 }
 async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown }) {
-  const w = await weigh(b.mint).catch(() => null);
+  const w = await weigh(b.mint).catch(() => null), talk = (b.callouts as { whatCallersSay?: string[] } | null | undefined)?.whatCallersSay;
+  if (talk?.length) callerTalk.set(b.mint, talk);
   think(ev, { looking: b.stop === "callout" ? "a coin someone called out, with their position and profit" : b.stop === "screener" ? "a live coin you spotted moving, before most people" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, callouts: b.callouts ?? undefined, ...(w?.risk ?? {}), canOpen: w?.refused === null });
 }
 /** Limits are read again here: the verdict alone never spends anything. */
@@ -134,13 +139,19 @@ async function openOwn(mint: string) {
 /** One public callout per position, right after its first buy, from what he already wrote about it. */
 const calledPath = resolve(dot, "kris-called.json"), wantCallout = new Set<string>();
 let called = new Set<string>(); try { called = new Set(JSON.parse(readFileSync(calledPath, "utf8")) as string[]); } catch {}
+const callerTalk = new Map<string, string[]>();
+async function composeCallout(symbol: string | null, myRead: string, whatCallersSay: string[]) {
+  let text = "";
+  for await (const chunk of streamLLM([{ role: "system", content: CALLOUT_SYSTEM }, { role: "user", content: JSON.stringify({ coin: symbol, myRead, whatCallersSay }) }], { timeoutMs: 60_000 })) text += chunk;
+  return calloutText(text);
+}
 function sendCallouts() {
   for (const mint of wantCallout) {
     if (ownCoins().includes(mint)) { wantCallout.delete(mint); continue; }
-    const said = events.find(e => e.mint === mint && e.kind === "position" && e.thought) ?? events.find(e => e.mint === mint && e.kind === "browse" && e.thought);
-    if (!said?.thought) continue;
+    const read = events.find(e => e.mint === mint && e.kind === "browse" && e.thought) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
+    if (!read?.thought) continue;
     wantCallout.delete(mint); called.add(mint); writeFileSync(calledPath, JSON.stringify([...called]));
-    writeCallout(import.meta.dir, { mint, text: calloutText(said.thought) });
+    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? []).catch(() => "").then(text => writeCallout(import.meta.dir, { mint, text: text || calloutText(read.thought!) }));
   }
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */
@@ -161,6 +172,11 @@ async function coinContext(mint: string) {
 const facts = (b: Bot) => ({ coin: b.symbol ?? b.mint.slice(0, 6), capUsd: b.capUsd ? Math.round(b.capUsd) : null, rangeUsd: b.range ? [b.range.buy, b.range.sell] : null,
   buysBelowUsd: b.nextBuy ? Math.round(b.nextBuy) : null, sellsAboveUsd: b.nextSell ? Math.round(b.nextSell) : null, holding: (b.holdingSteps ?? 0) > 0, coinPnlSol: b.pnl != null ? Number(b.pnl.toFixed(4)) : null });
 
+if (process.argv[2] === "--test-callout") {
+  const talk = (JSON.parse(readFileSync(browsingPath, "utf8")).callouts?.whatCallersSay ?? []) as string[];
+  for (const e of events.filter(x => x.kind === "browse" && x.thought && x.symbol !== "Hot coin").slice(0, 4)) console.log(`${e.symbol}: ${await composeCallout(e.symbol, e.thought!, talk)}`);
+  process.exit(0);
+}
 if (process.argv[2] === "--test") {
   const base = { coin: "TEST", capUsd: 57_842, rangeUsd: [22_000, 66_000], buysBelowUsd: 51_333, sellsAboveUsd: null, holding: false, coinPnlSol: 0 };
   const samples: [KrisEvent, Record<string, unknown>][] = [
