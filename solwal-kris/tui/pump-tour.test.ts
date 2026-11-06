@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { refuseMain, pickCoin, remember, safeFacts, safeName, trendingRow } from "./pump-tour.ts";
+import { refuseMain, pickCoin, pickScreener, remember, safeFacts, safeName, trendingRow } from "./pump-tour.ts";
 
 const a = "EFWotn2UtV2cAAAAAAAAAAAAAAAAAAAAAAAAAApump", b = "GdY4Z6pYUcr3AAAAAAAAAAAAAAAAAAAAAAAAAApump", c = "C5xph2yL6gMdAAAAAAAAAAAAAAAAAAAAAAAAAApump";
 const hrefs = [`/coin/${a}`, `/coin/${b}`, `/coin/${c}?highlight_callout=49044925-1581-4a3b`, "/coin/imeme.nearlytrade.near?highlight_callout=c629", "/coin/0x94641b9701aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "/perps", "https://evil.example/coin/x"];
@@ -21,7 +21,7 @@ test("never picks a link that is not a Solana coin page", () => {
 });
 test("remembers only the latest coins", () => {
   let r: string[] = [];
-  for (let i = 0; i < 20; i++) r = remember(r, `/coin/m${i}`);
+  for (let i = 0; i < 20; i++) r = remember(r, `/coin/m${i}`, 12);
   expect(r.length).toBe(12);
   expect(r[r.length - 1]).toBe("m19");
 });
@@ -50,4 +50,19 @@ test("the trade button is pressed only on the right side, amount and unit", () =
   expect(refuseMain({ ...box, main: null }, "buy", 12.5)).toBe("no trade button");
   expect(refuseMain({ ...box, main: { ...box.main, off: true } }, "buy", 12.5)).toBe("trade button is off");
   expect(refuseMain({ ...box, main: { ...box.main, hit: false } }, "buy", 12.5)).toBe("something covers the trade button");
+});
+
+const live = (mint: string, traders: number, over = {}) => ({ mint, traders, trades: traders * 2, capUsd: 30_000, ...over });
+test("the screener picks a live coin he has not looked at, among the busiest", () => {
+  const coins = [live("a", 300), live("b", 200), live("c", 100)];
+  expect(pickScreener(coins, [], 0)).toBe("a");
+  expect(pickScreener(coins, ["a"], 0)).toBe("b");
+  expect(pickScreener(coins, ["a", "b", "c"], 0)).toBeNull();
+  expect(pickScreener([live("a", 10)], [], 0)).toBeNull(); // too few traders to qualify
+  expect(pickScreener([live("a", 300, { capUsd: 2_000 })], [], 0)).toBeNull();
+});
+test("he remembers enough coins to keep finding new ones", () => {
+  let seen: string[] = [];
+  for (let i = 0; i < 300; i++) seen = remember(seen, `/coin/m${i}`);
+  expect(seen.length).toBe(200); expect(seen).toContain("m299"); expect(seen).not.toContain("m0");
 });

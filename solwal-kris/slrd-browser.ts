@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { pickCoin, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, calloutsScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
+import { pickCoin, pickScreener, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, calloutsScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
 import { execution, nextCallout, nextOrder, readOrder, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
 import { calloutSignals, splitCallouts, type Callout } from "./tui/agent-trader.ts";
 import { safeQuotes } from "./tui/callout-words.ts";
@@ -73,14 +73,25 @@ async function latestTrade() {
   return pump ? { mint: pump.mint as string, at: pump.addedAt as number } : null;
 }
 lastTrade = (await latestTrade())?.at ?? 0;
-async function visit() {
+const seenPath = resolve(dot, "kris-seen.json");
+try { recent = JSON.parse(readFileSync(seenPath, "utf8")); } catch {}
+const noted = (href: string) => { recent = remember(recent, href); try { writeFileSync(seenPath, JSON.stringify(recent)); } catch {} };
+async function visit(tries = 0): Promise<void> {
+  if (tries > 3) return go(HOME);
   const stop = TOUR[step++ % TOUR.length]!;
   if (stop === "portfolio") return go(portfolio());
+  const ov: any = await fetch(`${view}/api/overview`, { headers: { cookie: `slrd_web=${bridgeToken}` }, signal: AbortSignal.timeout(10_000) }).then(r => r.json()).catch(() => null);
+  const skip = [...recent, ...(ov?.bots ?? []).map((b: any) => b.mint as string)]; // what he holds is not news
+  if (stop === "screener") {
+    const mint = pickScreener([...(ov?.young ?? []), ...(ov?.coins ?? [])], skip);
+    if (!mint) return visit(tries + 1);
+    noted(`/coin/${mint}`); await go(coinPage(mint)); return log(`screener: ${mint}`);
+  }
   if (stop === "hot" && new URL(here).pathname !== "/") { if (!(await click("/"))) await go(HOME); await sleep(2_500); } // Trending is on the front page
   const hrefs = JSON.parse(await value(`JSON.stringify([...document.querySelectorAll("a[href]")].map(a => a.getAttribute("href")))`) ?? "[]") as string[];
-  const href = pickCoin(stop, hrefs, recent);
-  if (!href) return visit();
-  recent = remember(recent, href);
+  const href = pickCoin(stop, hrefs, skip);
+  if (!href) return visit(tries + 1);
+  noted(href);
   posted = stop === "callout" ? await value(`(() => { let e = [...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)}); while (e && e.innerText.length < 80) e = e.parentElement; return e ? e.innerText : ""; })()`) ?? "" : "";
   await value(`[...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)})?.scrollIntoView({ block: "center" })`);
   await pointAt(`[...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)})`);
@@ -198,7 +209,7 @@ const analysing = () => { if (!readAt || Date.now() - readAt > 45_000) return fa
 setInterval(async () => {
   if (wasBlocked || ordering || analysing()) return;
   const trade = await latestTrade();
-  if (trade && trade.at > lastTrade) { lastTrade = trade.at; recent = remember(recent, `/coin/${trade.mint}`); return go(coinPage(trade.mint)); }
+  if (trade && trade.at > lastTrade) { lastTrade = trade.at; noted(`/coin/${trade.mint}`); return go(coinPage(trade.mint)); }
   const stop = TOUR[step % TOUR.length]!;
   await visit();
   setTimeout(() => { if (!wasBlocked) void read(stop).catch(e => log(`read: ${String(e).slice(0, 80)}`)); }, 3_000);
