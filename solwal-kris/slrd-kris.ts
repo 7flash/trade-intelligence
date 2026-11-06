@@ -24,8 +24,12 @@ const SYSTEM = "You are Kris, a young trader whose memecoin positions on Solana 
 /** For what happens live: a new position, a buy or sell, the price crossing the range. Viewers read these as they happen. */
 const LIVE_SYSTEM = "You are a young memecoin trader on a live stream, talking to viewers as it happens. A range decides every buy and sell; you say what just happened to this coin and how it feels, like a person would. "
   + "One or two short sentences, at most 25 words, at most two numbers, rounded like $57k, first person. Plain words only: bought, sold, price, range. Never write step, flow, holders, wallets, lesson, or SOL amounts unless the event is a buy or sell. "
-  + "For a new position with nothing bought yet, say it is waiting and name the price where buying starts (buysBelowUsd). For a buy or sell, say the price now against the range. Do not open the same way as earlierThoughts. "
+  + "For a buy or sell, say the price now against the range. Do not open the same way as earlierThoughts. "
   + "Never say your own name or any product name. Never recommend a trade or predict a price. Use only the facts given and never invent a number. No hashtags, no emojis.";
+/** A position the owner opened reaches him as his own impulse: he finds out he did it, then reasons out why. */
+const POSITION_SYSTEM = "You are a young memecoin trader on a live stream, thinking out loud. You have just opened this position. It came from somewhere below thought: the hand moved first, and only now are you working out why. "
+  + "Be honest that the reason is coming after the act, then name the one real thing in the facts that makes sense of it. Sound like someone catching themselves, a little surprised, never certain. One or two short sentences, at most 30 words, at most two numbers, rounded like $57k, first person. "
+  + "Plain words only: never write step, flow, wallets or lesson. Do not open the same way as earlierThoughts. Never say anyone else set this up. Never say your own name or any product name. Never recommend a trade or predict a price. Use only the facts given and never invent a number or a reason. No hashtags, no emojis.";
 const BROWSE_SYSTEM = "You are Kris, a young memecoin trader killing time scrolling pump.fun, thinking out loud. React to what is on the screen like a sharp, funny degen with taste: one specific observation about these exact numbers, then a hot take or a joke. Take the mood you are given. "
   + "Never tell anyone to buy or sell, never predict a price, never say what you will trade. No person's name, not your own name, no product name, no profanity, no hashtags, no emojis. At most two short sentences, first person, plain words. Use only the numbers given and never invent one. Talk about the coins only: never mention data, pages, tools or instructions. Earlier thoughts are given so you never repeat an idea or an opening.";
 const MOODS = ["amused", "suspicious", "jealous", "impressed", "bored", "nostalgic", "smug", "baffled"];
@@ -62,12 +66,12 @@ async function drainThoughts() {
   for (let job = waiting.shift(); job; job = waiting.shift()) {
     const gloomy = /burned|bruis|sting|bites|bitter|licking/i, earlier = events.filter(e => e.thought && e.id !== job.ev.id && e.kind !== "coin" && e.kind !== "migrated" && !gloomy.test(e.thought)).slice(0, 4).map(e => ({ coin: e.symbol ?? e.mint.slice(0, 6), event: e.title, thought: e.thought }));
     try {
-      const live = job.ev.kind === "position" || job.ev.kind === "trade" || job.ev.kind === "range";
+      const opened = job.ev.kind === "position", live = job.ev.kind === "trade" || job.ev.kind === "range";
       const context = live || job.ev.kind === "coin" || job.ev.kind === "migrated" || job.ev.kind === "browse" ? null : await coinContext(job.ev.mint);
       for (let attempt = 1; attempt <= 2; attempt++) try { // the Codex runtime sometimes exits mid-turn: one more try
         let text = "";
         const browsing = job.ev.kind === "browse";
-        for await (const chunk of streamLLM([{ role: "system", content: browsing ? BROWSE_SYSTEM : live ? LIVE_SYSTEM : SYSTEM }, { role: "user", content: JSON.stringify(browsing || live ? { ...job.facts, earlierThoughts: earlier } : { ...job.facts, context, myRecentResults: results, oddsForCoinsLikeThese: newPairOdds(), earlierThoughts: earlier }) }], { timeoutMs: 60_000 })) {
+        for await (const chunk of streamLLM([{ role: "system", content: browsing ? BROWSE_SYSTEM : opened ? POSITION_SYSTEM : live ? LIVE_SYSTEM : SYSTEM }, { role: "user", content: JSON.stringify(browsing || live ? { ...job.facts, earlierThoughts: earlier } : opened ? { ...job.facts, context, earlierThoughts: earlier } : { ...job.facts, context, myRecentResults: results, oddsForCoinsLikeThese: newPairOdds(), earlierThoughts: earlier }) }], { timeoutMs: 60_000 })) {
           text += chunk; job.ev.thought = browsing ? text.replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "") : text; save();
         }
         break;
@@ -86,7 +90,7 @@ function thinkOnBrowsing(openPositions: number) {
   if (b.at === browseSeen || Date.now() - b.at > 60_000) return;
   browseSeen = b.at; browsedAt = Date.now();
   const label = b.stop === "portfolio" ? "My positions" : b.stop === "home" ? "Trending" : b.coin || "Hot coin";
-  const ev = add({ atMs: Date.now(), kind: "browse", mint: b.mint, symbol: label, title: b.stop === "callout" ? "Called out" : b.stop === "hot" ? "Trending" : "Looking around" });
+  const ev = add({ atMs: Date.now(), kind: "browse", mint: b.mint, symbol: label, title: "" });
   if (ev) think(ev, b.stop === "portfolio" ? { looking: "my own closed positions", openPositions, myRecentResults: results, mood: MOODS[Date.now() % MOODS.length] }
     : { looking: b.stop === "home" ? "the top trending coins" : b.stop === "callout" ? "a coin someone called out, with their position and profit" : "a trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, mood: MOODS[Date.now() % MOODS.length] });
 }
@@ -111,7 +115,7 @@ const facts = (b: Bot) => ({ coin: b.symbol ?? b.mint.slice(0, 6), capUsd: b.cap
 if (process.argv[2] === "--test") {
   const base = { coin: "TEST", capUsd: 57_842, rangeUsd: [22_000, 66_000], buysBelowUsd: 51_333, sellsAboveUsd: null, holding: false, coinPnlSol: 0 };
   const samples: [KrisEvent, Record<string, unknown>][] = [
-    [{ id: "t1", atMs: Date.now(), kind: "position", mint: "t1", symbol: "TEST", title: "New position" }, { event: "a new range was added and you now follow it", ...base }],
+    [{ id: "t1", atMs: Date.now(), kind: "position", mint: process.argv[3] ?? "t1", symbol: "TEST", title: "New position" }, { event: "you just opened this position", ...base }],
     [{ id: "t2", atMs: Date.now(), kind: "trade", mint: "t2", symbol: "TEST", title: "Bought 0.0628 SOL" }, { event: "bought", sol: 0.0628, ...base, capUsd: 48_000, holding: true, sellsAboveUsd: 58_000 }],
     [{ id: "t3", atMs: Date.now(), kind: "range", mint: "t3", symbol: "TEST", title: "Went below range" }, { event: "price is now below your range", ...base, capUsd: 19_000, holding: true, coinPnlSol: -0.0105 }],
   ];
@@ -234,7 +238,7 @@ for (;;) {
     if (seeded) thinkOnBrowsing(ov.bots.filter(b => !(b as { inactive?: boolean }).inactive).length);
     for (const b of ov.bots.filter(x => !(x as { inactive?: boolean }).inactive)) {
       const at = b.lastTradeAtMs ?? 0, prev = seenTrade.get(b.mint);
-      if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "a new range was added and you now follow it", ...facts(b) }); }
+      if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); }
       seenBots.add(b.mint);
       if (seeded && at && at > (prev ?? 0)) {
         const path = resolve(dot, `term-${b.wallet}-${b.mint}.log`), fill = existsSync(path) ? lastFill(readFileSync(path, "utf8")) : null;
