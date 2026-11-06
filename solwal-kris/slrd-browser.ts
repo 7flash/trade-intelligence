@@ -7,6 +7,7 @@ import { KRIS_WALLET } from "./tui/kris-public.ts";
 import { pickCoin, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, calloutsScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
 import { execution, nextCallout, nextOrder, readOrder, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
 import { calloutSignals, splitCallouts, type Callout } from "./tui/agent-trader.ts";
+import { safeQuotes } from "./tui/callout-words.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
 const bridgeToken = readFileSync(resolve(dot, "bridge-token"), "utf8").trim();
@@ -124,7 +125,7 @@ async function readCallouts() {
   let posts: Callout[] = [];
   for (let i = 0; i < 8 && !posts.length; i++) { await sleep(700); posts = splitCallouts(await value(calloutsScript) ?? ""); } // they load after the tab opens
   log(`read ${posts.length} callouts`);
-  return calloutSignals(posts);
+  return posts.length ? { ...calloutSignals(posts)!, whatCallersSay: safeQuotes(posts) } : null;
 }
 /** One public post, in the site's own box, from the words Kris already wrote. A dry job stops before the post. */
 async function postCallout(job: CalloutJob) {
