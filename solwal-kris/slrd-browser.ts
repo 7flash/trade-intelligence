@@ -91,8 +91,8 @@ async function read(stop: TourStop) {
   const seen = JSON.parse(await value(`JSON.stringify({ title: document.title, path: location.pathname, text: document.body.innerText, coins: [...document.querySelectorAll('a[href^="/coin/"]')].filter(a => !a.getAttribute("href").includes("highlight_callout")).slice(0, 6).map(a => { let e = a; for (let i = 0; i < 4 && e && !/\\$/.test(e.innerText); i++) e = e.parentElement; return e ? e.innerText : a.innerText; }) })`) ?? "null") as { title: string; path: string; text: string; coins: string[] } | null;
   if (!seen || blocked(seen.title)) return;
   const coin = /^\/coin\//.test(seen.path), at = seen.text.indexOf("Market cap");
-  const at = Date.now(); readAt = coin ? at : 0;
-  writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at, stop, mint: coin ? seen.path.slice(6) : "",
+  const readNow = Date.now(); readAt = coin ? readNow : 0;
+  writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: readNow, stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
     callout: stop === "callout" ? safeFacts(posted, 10) : [] }));
