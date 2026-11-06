@@ -10,6 +10,11 @@ test("reads a post as the site lays it out", () => {
   expect(parseCallout(words, "/profile/b")).toMatchObject({ ageMin: 12, positionUsd: null, profitUsd: null });
   expect(parseCallout("x\n3h\nloss\nPosition\n$10\nProfit\n−$4.50\n1\n2\n3", "c").profitUsd).toBe(-4.5);
 });
+test("reads the coin tab's layout, where the counts come before Position", () => {
+  const p = parseCallout("The_Ginger\n@BxYourselfx\n8m\n\nBest callout of the day.\n\n9\n4\n1,208\n$10.5K\n MC\nPosition\n\n$424.17\n\nSold 49%\nProfit\n+$111.56\n+61.8%\n\nSpent $181\n·\nAvg entry $6.49K MC\nSupply held 2.78%\n\nView trades", "/profile/g");
+  expect(p).toMatchObject({ ageMin: 8, positionUsd: 424.17, profitUsd: 111.56, likes: 9, views: 1208 });
+  expect(p.body).toBe("Best callout of the day.");
+});
 test("a real caller holds a position and did not copy anyone", () => {
   const s = calloutSignals([parseCallout(held, "a"), parseCallout(words, "b"), parseCallout("n\n1m\nsame words copied around here\nPosition\n$5\nProfit\n+$1\n0\n0\n9", "c"), parseCallout("n\n2m\nSame words, copied around here!\n0", "d")])!;
   expect(s.callers).toBe(4); expect(s.copiedCallers).toBe(2); expect(s.realCallersPct).toBe(25); expect(s.heldUsd).toBe(159);

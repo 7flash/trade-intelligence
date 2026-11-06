@@ -13,7 +13,7 @@ const ageOf = (s: string) => { const m = /^(\d+)([smhd])$/.exec(s); return m ? N
 export function parseCallout(text: string, who: string): Callout {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean), at = lines.findIndex(l => l === "Position"), profit = lines.indexOf("Profit");
   const ageAt = lines.findIndex(l => ageOf(l) != null), end = at >= 0 ? at : lines.length;
-  const tail = lines.slice(profit >= 0 ? profit + 2 : end).map(count).filter((n): n is number => n != null);
+  const tail = lines.slice(ageAt + 1).filter((_, i, all) => all[i - 1] !== "Position" && all[i - 1] !== "Profit").map(count).filter((n): n is number => n != null); // likes, replies, views: on either side of Position
   return { who, body: lines.slice(ageAt + 1, end).filter(l => count(l) == null && money(l) == null && l !== "MC").join(" "), ageMin: ageAt >= 0 ? ageOf(lines[ageAt]!) : null,
     positionUsd: at >= 0 ? money(lines[at + 1]) : null, profitUsd: profit >= 0 ? money(lines[profit + 1]) : null, likes: tail[0] ?? 0, views: tail[2] ?? tail[tail.length - 1] ?? 0 };
 }
