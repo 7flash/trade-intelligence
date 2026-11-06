@@ -4,8 +4,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { pickCoin, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
-import { execution, nextOrder, readOrder, writeOrder, type AgentOrder } from "./tui/agent-orders.ts";
+import { pickCoin, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, calloutsScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
+import { execution, nextCallout, nextOrder, readOrder, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
+import { calloutSignals, parseCallout } from "./tui/agent-trader.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
 const bridgeToken = readFileSync(resolve(dot, "bridge-token"), "utf8").trim();
@@ -92,13 +93,14 @@ async function read(stop: TourStop) {
   if (!seen || blocked(seen.title)) return;
   const coin = /^\/coin\//.test(seen.path), at = seen.text.indexOf("Market cap");
   const readNow = Date.now(); readAt = coin ? readNow : 0;
+  const callouts = coin ? await readCallouts().catch(() => null) : null;
   writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: readNow, stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
-    callout: stop === "callout" ? safeFacts(posted, 10) : [] }));
+    callout: stop === "callout" ? safeFacts(posted, 10) : [], callouts }));
 }
 /** A real mouse click, with Kris's cursor on the stream going there first. */
-async function realClick(at: { x: number; y: number }, box: TradeBox, travel = 1_100) {
+async function realClick(at: { x: number; y: number }, box: Pick<TradeBox, "wide" | "high">, travel = 1_100) {
   pointer.x = at.x / box.wide; pointer.y = at.y / box.high; await sleep(travel);
   const m = { x: at.x, y: at.y, button: "left", clickCount: 1 };
   await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
@@ -106,6 +108,34 @@ async function realClick(at: { x: number; y: number }, box: TradeBox, travel = 1
   await cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...m, buttons: 1 }); await sleep(70);
   await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...m, buttons: 0 }); await sleep(400);
   pointer.down = 0;
+}
+const tap = async (pattern: string) => { const at = JSON.parse(await value(buttonScript(pattern)) ?? "null"); if (!at) return false; await realClick(at, at); return true; };
+/** He opens the coin's Callouts tab in front of viewers and reads every post. Only counts leave here. */
+async function readCallouts() {
+  if (!(await tap("/^Callouts/"))) return null;
+  await sleep(2_000);
+  const posts = JSON.parse(await value(calloutsScript) ?? "[]") as { who: string; text: string }[];
+  return calloutSignals(posts.map(p => parseCallout(p.text, p.who)));
+}
+/** One public post, in the site's own box, from the words Kris already wrote. A dry job stops before the post. */
+async function postCallout(job: CalloutJob) {
+  const url = coinPage(job.mint); if (url === HOME) return;
+  await go(url);
+  for (let i = 0; i < 24; i++) { await sleep(500); if ((await value("location.pathname")) === `/coin/${job.mint}` && await readBox()) break; }
+  await sleep(1_000);
+  if (!(await tap("/^Add your callout/"))) return log(`callout ${job.mint.slice(0, 6)}: no button`);
+  await sleep(1_500);
+  let form = JSON.parse(await value(calloutFormScript) ?? "null");
+  log(`callout form: ${JSON.stringify(form).slice(0, 300)}`);
+  if (!form?.input) { await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); return log(`callout ${job.mint.slice(0, 6)}: no box`); }
+  await realClick(form.input, form);
+  await cdp("Input.insertText", { text: job.text }); await sleep(700);
+  form = JSON.parse(await value(calloutFormScript) ?? "null");
+  log(`callout filled: ${JSON.stringify(form).slice(0, 300)}`);
+  if (job.dry || !form?.send || form.send.off || form.written < 5) { await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); return log(`callout ${job.mint.slice(0, 6)}: ${job.dry ? "dry, not posted" : "no send button"}`); }
+  await realClick(form.send, form);
+  log(`callout posted on ${job.mint.slice(0, 6)}`); await sleep(3_000);
+  log(`after callout: ${await value(afterPressScript) ?? ""}`);
 }
 const readBox = async () => JSON.parse(await value(tradeBoxScript) ?? "null") as TradeBox | null;
 /** Opens the coin and fills in the trade box. The main button is pressed only if every check passes. */
@@ -142,9 +172,15 @@ async function pressOrder(o: AgentOrder) {
 }
 setInterval(async () => {
   if (ordering || wasBlocked) return;
-  const o = nextOrder(root); if (!o) return;
+  const o = nextOrder(root);
+  if (o) {
+    ordering = true;
+    await pressOrder(o).catch(e => writeOrder(root, { ...o, state: "failed", note: String(e).slice(0, 80) })).finally(() => { ordering = false; });
+    return;
+  }
+  const job = nextCallout(root); if (!job) return;
   ordering = true;
-  await pressOrder(o).catch(e => writeOrder(root, { ...o, state: "failed", note: String(e).slice(0, 80) })).finally(() => { ordering = false; });
+  await postCallout(job).catch(e => log(`callout: ${String(e).slice(0, 80)}`)).finally(() => { ordering = false; });
 }, 1_000);
 /** He stays on a coin until his analysis of it is written, at most 45s. */
 const analysing = () => { if (!readAt || Date.now() - readAt > 45_000) return false; try { return JSON.parse(readFileSync(resolve(dot, "kris-analysed.json"), "utf8")).at !== readAt; } catch { return true; } };

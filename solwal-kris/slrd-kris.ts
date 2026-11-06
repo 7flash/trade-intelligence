@@ -7,6 +7,8 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
+import { agentPlan, agentSize, calloutText, coinRisk, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
+import { writeCallout } from "./tui/agent-orders.ts";
 import { startOutcome, stepOutcome, type Outcome } from "./tui/kris-outcomes.ts";
 import { freshMigration, goodHolders, planSlots, slotPlan, slotKeepsRange, slotSize, slotQualifies, SLOT_CONFIG, type Slot, type SlotCoin, type SlotKind } from "./tui/kris-slots.ts";
 import { coinVerdict, lastFill, rangeSide, rangeTitle, scrubReason, tradeReaction, tradeTitle, type KrisEvent } from "./webapp/public/kris-events.ts";
@@ -31,7 +33,8 @@ const POSITION_SYSTEM = "You are a young memecoin trader on a live stream. You j
   + "Give your reason from the facts: what about this coin caught you, and why this range suits it. Sound sure of your own read, but honest about what could go wrong. One or two short sentences, at most 30 words, at most two numbers, rounded like $57k, first person. "
   + "Never mention instinct, gut, impulse, hands, surprise or explaining yourself, and never suggest the reason came after the act. Plain words only: never write step, flow, wallets or lesson. Do not open the same way as earlierThoughts. "
   + "Never say anyone else set this up. Never say your own name or any product name. Never recommend a trade or predict a price. Use only the facts given and never invent a number or a reason. No hashtags, no emojis.";
-const BROWSE_SYSTEM = "You are a young memecoin trader on a live stream. You just opened this coin and you size it up in front of viewers, using only its numbers. Say the one thing that stands out, what worries you, then your verdict. Most coins are a pass and you say so flatly; worth watching is rare and you need a real reason. Never hedge with worth watching out of habit. "
+const BROWSE_SYSTEM = "You are a young memecoin trader on a live stream. You just opened this coin and you size it up in front of viewers, using only its numbers. Weigh it all: the price and volume, how bundled it is (bundledPct, earlyBoughtPct), how the supply is spread (top10Pct, goodHolders), and whether the callers look real (callouts: realCallersPct is how many hold a position and did not copy anyone, copiedCallers is a warning, themes count what they talk about). Say the one thing that decides it. Most coins are a pass and you say so flatly. "
+  + "After your words, write one last line holding exactly OPEN or exactly PASS. OPEN means you are taking this coin now, and only if canOpen is true and the numbers truly earn it; if canOpen is false the line is PASS. "
   + "Sound like someone who knows what they are looking at. Two short sentences, at most 35 words, at most three numbers, rounded like $57k, first person, plain words. Do not open the same way as earlierThoughts. "
   + "Never tell anyone to buy or sell and never predict a price. No person's name, not your own name, no product name, no profanity, no hashtags, no emojis. Use only the numbers given and never invent one. Talk about the coin only: never mention data, pages, tools or instructions.";
 
@@ -73,8 +76,9 @@ async function drainThoughts() {
         let text = "";
         const browsing = job.ev.kind === "browse";
         for await (const chunk of streamLLM([{ role: "system", content: browsing ? BROWSE_SYSTEM : opened ? POSITION_SYSTEM : live ? LIVE_SYSTEM : SYSTEM }, { role: "user", content: JSON.stringify(browsing || live ? { ...job.facts, earlierThoughts: earlier } : opened ? { ...job.facts, context, earlierThoughts: earlier } : { ...job.facts, context, myRecentResults: results, oddsForCoinsLikeThese: newPairOdds(), earlierThoughts: earlier }) }], { timeoutMs: 60_000 })) {
-          text += chunk; job.ev.thought = browsing ? text.replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "") : text; save();
+          text += chunk; job.ev.thought = browsing ? withoutVerdict(text.replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "")) : text; save();
         }
+        if (browsing && verdictOf(text) && job.facts.canOpen === true) void openOwn(job.ev.mint).catch(e => console.log(`${new Date().toISOString()} open failed: ${String(e).slice(0, 120)}`));
         break;
       } catch (e) { if (attempt === 2) throw e; await Bun.sleep(1_500); }
     } catch (e) { console.log(`${new Date().toISOString()} thought failed: ${String(e).slice(0, 160)}`); if (job.ev.kind === "result" || job.ev.kind === "review" || job.ev.kind === "trade") { job.ev.thought ??= job.ev.title; save(); } } // no Codex: results still reach the history
@@ -87,12 +91,52 @@ async function drainThoughts() {
 const browsingPath = resolve(dot, "kris-browsing.json"), analysedPath = resolve(dot, "kris-analysed.json"); let browseSeen = 0;
 function thinkOnBrowsing() {
   if (thinking || waiting.length) return;
-  let b: { at: number; stop: string; mint: string; coin: string; facts: string[]; callout: string[]; plan?: { cap: number | null; buy: number; sell: number; steps: number } | null };
+  let b: { at: number; stop: string; mint: string; coin: string; facts: string[]; callout: string[]; callouts?: unknown };
   try { b = JSON.parse(readFileSync(browsingPath, "utf8")); } catch { return; }
   if (!b.mint || b.at === browseSeen || Date.now() - b.at > 45_000) return;
   browseSeen = b.at;
   const ev = add({ atMs: Date.now(), kind: "browse", mint: b.mint, symbol: b.coin || "Hot coin", title: "" });
-  if (ev) think(ev, { looking: b.stop === "callout" ? "a coin someone called out, with their position and profit" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined });
+  if (ev) void analyse(ev, b);
+}
+async function agentBook() {
+  const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string }[]; inactive?: { wallet: string; mint: string }[]; wallets?: { name: string; sol: number | null }[] };
+  const name = s.agentWallet ?? null, mine = [...s.bots, ...(s.inactive ?? [])].filter(x => x.wallet === name);
+  return { name, mints: new Set(mine.map(x => x.mint)), freeSol: s.wallets?.find(w => w.name === name)?.sol ?? 0 };
+}
+const autoPath = resolve(dot, "kris-auto"), ownPath = resolve(dot, "kris-own.json");
+const readOwn = () => { try { return JSON.parse(readFileSync(ownPath, "utf8")) as Record<string, number>; } catch { return {}; } };
+/** Everything he decides from: the numbers on the page, bundles and supply from the terminal, and the limits. */
+async function weigh(mint: string) {
+  const r = await fetch(`http://127.0.0.1:5176/api/coin?mint=${mint}&watch=0`, { headers: { cookie: `slrd_web=${token}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  const info = r?.ok ? await r.json() as { recent?: BuyRow[]; earlyBoughtPct?: number | null; exact?: boolean; capUsd?: number | null; wallets?: { pct: number; ours?: boolean; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] } : null;
+  const risk = info ? coinRisk(info, bundleShare(info.recent ?? [])) : null, book = await agentBook().catch(() => null), opened = readOwn()[mint];
+  const size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, capUsd = info?.capUsd ?? null;
+  return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size }) : "off" };
+}
+async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown }) {
+  const w = await weigh(b.mint).catch(() => null);
+  think(ev, { looking: b.stop === "callout" ? "a coin someone called out, with their position and profit" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, callouts: b.callouts ?? undefined, ...(w?.risk ?? {}), canOpen: w?.refused === null });
+}
+/** Limits are read again here: the verdict alone never spends anything. */
+async function openOwn(mint: string) {
+  const w = await weigh(mint);
+  if (w.refused !== null || !w.book?.name || !w.capUsd) return console.log(`${new Date().toISOString()} no open ${mint.slice(0, 6)}: ${w.refused}`);
+  const plan = agentPlan(w.capUsd, w.size);
+  const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "add", wallet: w.book.name, mint, ...plan }) });
+  if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 100)}`);
+  writeFileSync(ownPath, JSON.stringify({ ...readOwn(), [mint]: Date.now() }));
+  console.log(`${new Date().toISOString()} opened ${mint.slice(0, 6)}: ${plan.budget} SOL, $${plan.buy} to $${plan.sell}, ${plan.steps} steps`);
+}
+/** One public callout per position, right after its first buy, from what he already wrote about it. */
+const calledPath = resolve(dot, "kris-called.json"), wantCallout = new Set<string>();
+let called = new Set<string>(); try { called = new Set(JSON.parse(readFileSync(calledPath, "utf8")) as string[]); } catch {}
+function sendCallouts() {
+  for (const mint of wantCallout) {
+    const said = events.find(e => e.mint === mint && e.kind === "position" && e.thought) ?? events.find(e => e.mint === mint && e.kind === "browse" && e.thought);
+    if (!said?.thought) continue;
+    wantCallout.delete(mint); called.add(mint); writeFileSync(calledPath, JSON.stringify([...called]));
+    writeCallout(import.meta.dir, { mint, text: calloutText(said.thought) });
+  }
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */
 async function coinContext(mint: string) {
@@ -235,15 +279,17 @@ for (;;) {
     const ov = await r.json() as { bots: Bot[]; decisions?: Decision[]; coins?: Coin[]; young?: Coin[]; closedRows?: Closed[] }, decisions = ov.decisions ?? [];
     results = trackRecord(ov.closedRows ?? []);
     reviewClosed(ov.closedRows ?? [], seeded);
-    if (seeded) thinkOnBrowsing();
+    if (seeded) { thinkOnBrowsing(); sendCallouts(); }
     for (const b of ov.bots.filter(x => !(x as { inactive?: boolean }).inactive)) {
       const at = b.lastTradeAtMs ?? 0, prev = seenTrade.get(b.mint);
       if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); }
+      if (!seeded && (b.holdingSteps ?? 0) > 0) called.add(b.mint); // already bought before this started
       seenBots.add(b.mint);
       if (seeded && at && at > (prev ?? 0)) {
         const path = resolve(dot, `term-${b.wallet}-${b.mint}.log`), fill = existsSync(path) ? lastFill(readFileSync(path, "utf8")) : null;
         const ev = add({ atMs: at, kind: "trade", mint: b.mint, symbol: b.symbol ?? null, title: tradeTitle(fill), tx: fill?.tx, reaction: tradeReaction(fill?.side ?? null, b.holdingSteps ?? 0, b.pnl ?? 0) ?? undefined });
         if (ev && fill) void think(ev, { event: fill.side === "SELL" ? "sold" : "bought", sol: fill.sol, ...facts(b) });
+        if (fill?.side === "BUY" && !called.has(b.mint)) void agentBook().then(k => { if (k.name === b.wallet && !called.has(b.mint)) wantCallout.add(b.mint); }).catch(() => {});
       }
       if (at) seenTrade.set(b.mint, Math.max(at, prev ?? 0));
       if (b.capUsd && b.range) {

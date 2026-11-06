@@ -59,3 +59,14 @@ export function refuseMain(box: TradeBox, side: "buy" | "sell", amountUsd: numbe
   if (!new RegExp(`^(${side}|place)`, "i").test(box.main.text)) return `button says ${box.main.text}`;
   return null;
 }
+
+/** A button by its words, in window pixels. */
+export const buttonScript = (pattern: string) => `(() => { const b = [...document.querySelectorAll("button")].filter(e => ${pattern}.test((e.textContent || "").trim()) && e.getBoundingClientRect().width > 0)[0]; if (!b) return "null"; b.scrollIntoView({ block: "center" }); const r = b.getBoundingClientRect(); return JSON.stringify({ x: r.left + r.width / 2, y: r.top + r.height / 2, wide: innerWidth, high: innerHeight }); })()`;
+/** The posts in the open Callouts tab: who and their words, for tui/agent-trader.ts to read. */
+export const calloutsScript = `(() => { const panel = document.querySelector('[role=tabpanel][data-state=active]'); if (!panel) return "[]"; const seen = new Map();
+  for (const a of panel.querySelectorAll('a[href^="/profile/"]')) { if (!a.getBoundingClientRect().width) continue; let e = a; while (e.parentElement && e !== panel && (e.innerText || "").length < 40) e = e.parentElement; if (e === panel) continue; if (!seen.has(e)) seen.set(e, a.getAttribute("href")); }
+  return JSON.stringify([...seen].slice(0, 30).map(([e, who]) => ({ who, text: e.innerText || "" }))); })()`;
+/** The callout box, wherever the site opens it. */
+export const calloutFormScript = `(() => { const at = e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }; const shown = e => e.getBoundingClientRect().width > 0; const root = [...document.querySelectorAll("[role=dialog]")].filter(shown).pop() || null; if (!root) return JSON.stringify({ dialog: false });
+  const input = [...root.querySelectorAll("textarea,[contenteditable=true]")].find(shown); const buttons = [...root.querySelectorAll("button")].filter(b => shown(b) && (b.textContent || "").trim()); const send = buttons.filter(b => /^(post|share|publish|send|call)/i.test(b.textContent.trim())).pop();
+  return JSON.stringify({ dialog: true, wide: innerWidth, high: innerHeight, words: (root.innerText || "").slice(0, 120), input: input ? at(input) : null, written: input ? (input.value ?? input.innerText ?? "").length : 0, buttons: buttons.map(b => b.textContent.trim().slice(0, 24)).slice(0, 10), send: send ? { ...at(send), text: send.textContent.trim().slice(0, 24), off: send.disabled } : null }); })()`;

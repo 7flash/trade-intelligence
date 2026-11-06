@@ -41,6 +41,16 @@ export function orderDesk(root: string, address: string, keyless = false): Order
   };
 }
 
+/** A public callout waiting for the browser: one per position, written once and then gone. */
+export type CalloutJob = { mint: string; text: string; dry?: boolean };
+const calloutDir = (root: string) => join(root, ".range-bots", "agent-callouts");
+export function writeCallout(root: string, job: CalloutJob) { mkdirSync(calloutDir(root), { recursive: true }); const p = join(calloutDir(root), `${job.mint}.json`); writeFileSync(`${p}.tmp`, JSON.stringify(job)); renameSync(`${p}.tmp`, p); }
+export function nextCallout(root: string): CalloutJob | null {
+  let names: string[] = []; try { names = readdirSync(calloutDir(root)).filter(n => n.endsWith(".json")); } catch { return null; }
+  const name = names[0]; if (!name) return null;
+  const p = join(calloutDir(root), name); try { const job = JSON.parse(readFileSync(p, "utf8")) as CalloutJob; rmSync(p, { force: true }); return job; } catch { rmSync(p, { force: true }); return null; }
+}
+
 export type OrderResult = { result: "filled" | "not-pressed" | "no-fill"; note: string };
 /** Places the order and watches the chain, which alone says whether it filled. */
 export async function runOrder(desk: OrderDesk, order: Parameters<OrderDesk["place"]>[0], chain: { before: bigint; tokens: () => Promise<bigint> },
