@@ -113,8 +113,9 @@ const tap = async (pattern: string) => { const at = JSON.parse(await value(butto
 /** He opens the coin's Callouts tab in front of viewers and reads every post. Only counts leave here. */
 async function readCallouts() {
   if (!(await tap("/^Callouts/"))) return null;
-  await sleep(2_000);
-  const posts = JSON.parse(await value(calloutsScript) ?? "[]") as { who: string; text: string }[];
+  let posts: { who: string; text: string }[] = [];
+  for (let i = 0; i < 8 && !posts.length; i++) { await sleep(700); posts = JSON.parse(await value(calloutsScript) ?? "[]"); } // they load after the tab opens
+  log(`read ${posts.length} callouts`);
   return calloutSignals(posts.map(p => parseCallout(p.text, p.who)));
 }
 /** One public post, in the site's own box, from the words Kris already wrote. A dry job stops before the post. */
@@ -122,8 +123,9 @@ async function postCallout(job: CalloutJob) {
   const url = coinPage(job.mint); if (url === HOME) return;
   await go(url);
   for (let i = 0; i < 24; i++) { await sleep(500); if ((await value("location.pathname")) === `/coin/${job.mint}` && await readBox()) break; }
-  await sleep(1_000);
-  if (!(await tap("/^Add your callout/"))) return log(`callout ${job.mint.slice(0, 6)}: no button`);
+  let open = false;
+  for (let i = 0; i < 12 && !open; i++) { await sleep(700); open = await tap("/^Add your callout/"); } // the holder's card loads after the trade box
+  if (!open) return log(`callout ${job.mint.slice(0, 6)}: no button`);
   await sleep(1_500);
   let form = JSON.parse(await value(calloutFormScript) ?? "null");
   log(`callout form: ${JSON.stringify(form).slice(0, 300)}`);
