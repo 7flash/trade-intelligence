@@ -52,7 +52,7 @@ test("the trade button is pressed only on the right side, amount and unit", () =
   expect(refuseMain({ ...box, main: { ...box.main, hit: false } }, "buy", 12.5)).toBe("something covers the trade button");
 });
 
-const live = (mint: string, traders: number, over = {}) => ({ mint, traders, trades: traders * 2, capUsd: 30_000, ...over });
+const live = (mint: string, traders: number, over = {}) => ({ mint, traders, trades: traders * 2, capUsd: 30_000, ageMs: 600_000, ...over });
 test("the screener picks a live coin he has not looked at, among the busiest", () => {
   const coins = [live("a", 300), live("b", 200), live("c", 100)];
   expect(pickScreener(coins, [], 0)).toBe("a");
@@ -60,6 +60,7 @@ test("the screener picks a live coin he has not looked at, among the busiest", (
   expect(pickScreener(coins, ["a", "b", "c"], 0)).toBeNull();
   expect(pickScreener([live("a", 10)], [], 0)).toBeNull(); // too few traders to qualify
   expect(pickScreener([live("a", 300, { capUsd: 2_000 })], [], 0)).toBeNull();
+  expect(pickScreener([live("a", 300, { ageMs: 120_000 })], [], 0)).toBeNull(); // too new to open, so not worth the stop
 });
 test("he remembers enough coins to keep finding new ones", () => {
   let seen: string[] = [];

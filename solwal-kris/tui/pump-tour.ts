@@ -14,9 +14,9 @@ export function pickCoin(kind: "hot" | "callout", hrefs: string[], recent: strin
   return hrefs.find(h => COIN.test(h) && isCallout(h) === (kind === "callout") && !seen.has(mintOf(h))) ?? null;
 }
 
-/** From the terminal's own list of live coins: one that qualifies, not looked at lately, among the busiest few so it varies. */
-export function pickScreener(coins: SlotCoin[], recent: string[], at = Math.random()) {
-  const seen = new Set(recent), fresh = coins.filter(c => !seen.has(c.mint) && slotQualifies(c, c.migrated ? "migrated" : "new")).sort((a, b) => (b.traders ?? 0) - (a.traders ?? 0)).slice(0, 12);
+/** From the terminal's own list of live coins: one he could really open, not looked at lately, among the busiest few so it varies. */
+export function pickScreener(coins: SlotCoin[], recent: string[], at = Math.random(), minAgeMs = 300_000, minCapUsd = 5_000) {
+  const seen = new Set(recent), fresh = coins.filter(c => !seen.has(c.mint) && (c.ageMs ?? 0) >= minAgeMs && (c.capUsd ?? 0) >= minCapUsd && slotQualifies(c, c.migrated ? "migrated" : "new")).sort((a, b) => (b.traders ?? 0) - (a.traders ?? 0)).slice(0, 12);
   return fresh[Math.floor(at * fresh.length)]?.mint ?? null;
 }
 
