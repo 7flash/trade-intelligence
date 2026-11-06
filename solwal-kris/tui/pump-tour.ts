@@ -28,3 +28,26 @@ export function trendingRow(text: string) {
   return `${safeName(name)}: ${safeFacts(rest.join("\n"), 4).join(" ")}`;
 }
 
+/** Market cap from the page's stat text, "$236K" to 236000. */
+export function capOf(text: string) {
+  const m = /\$([\d.,]+) ?([KMB]?)/i.exec(text);
+  return m ? Number(m[1]!.replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[2]!.toUpperCase()] ?? 1) : null;
+}
+export type Panel = { coin: string; cap: number | null; buy: number; sell: number; steps: number; live: boolean };
+const usd = (n: number) => n >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n / 1000)}k`;
+/** Where the cap sits in the range, 0 to 100. Steps are spaced by percent, so this is measured the same way. */
+export const rangeAt = (p: Panel) => p.cap ? Math.max(0, Math.min(100, Math.log(p.cap / p.buy) / Math.log(p.sell / p.buy) * 100)) : 0;
+/** Script that draws Kris's range card on the page and types its values in, or removes it. It only shows: no controls,
+ * no token, and values go in as text, never as HTML. */
+export function panelScript(p: Panel | null) {
+  const rows = p ? [["Buy from", usd(p.buy)], ["Sell to", usd(p.sell)], ["Steps", String(p.steps)], ["Now", p.cap ? usd(p.cap) : "-"]] : [];
+  return `(() => { document.getElementById("kris-range")?.remove(); ${p ? `
+    const d = document.createElement("div"); d.id = "kris-range";
+    d.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483647;width:230px;padding:14px;background:#111418f5;color:#e8eaed;border:1px solid #2a3038;border-radius:12px;font:13px/1.6 ui-monospace,monospace;pointer-events:none;box-shadow:0 8px 30px #0009";
+    const head = document.createElement("div"); head.style.cssText = "display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px"; const name = document.createElement("span"); name.textContent = ${JSON.stringify(p.coin || "Coin")}; const state = document.createElement("span"); state.textContent = ${JSON.stringify(p.live ? "LIVE" : "PLAN")}; state.style.color = ${JSON.stringify(p.live ? "#22c55e" : "#8b95a1")}; head.append(name, state); d.append(head);
+    const cells = ${JSON.stringify(rows)}.map(([label, value]) => { const r = document.createElement("div"); r.style.cssText = "display:flex;justify-content:space-between"; const l = document.createElement("span"); l.style.color = "#8b95a1"; l.textContent = label; const v = document.createElement("span"); r.append(l, v); d.append(r); return [v, value]; });
+    const bar = document.createElement("div"); bar.style.cssText = "position:relative;height:6px;margin-top:10px;border-radius:3px;background:linear-gradient(90deg,#22c55e66,#ef444466)"; const mark = document.createElement("div"); mark.style.cssText = "position:absolute;top:-2px;left:0;width:3px;height:10px;background:#fff;border-radius:1px;transition:left 1.2s"; bar.append(mark); d.append(bar);
+    document.body.append(d);
+    let i = 0, c = 0; const t = setInterval(() => { const cell = cells[i]; if (!cell) { clearInterval(t); mark.style.left = "calc(${rangeAt(p).toFixed(1)}% - 1px)"; return; } cell[0].textContent = cell[1].slice(0, ++c); if (c >= cell[1].length) { i++; c = 0; } }, 90);` : ""} })()`;
+}
+

@@ -4,7 +4,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { pickCoin, remember, safeFacts, safeName, TOUR, trendingRow, type TourStop } from "./tui/pump-tour.ts";
+import { capOf, panelScript, pickCoin, remember, safeFacts, safeName, TOUR, trendingRow, type TourStop } from "./tui/pump-tour.ts";
+import { SLOT_CONFIG, slotPlan } from "./tui/kris-slots.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
 const bridgeToken = readFileSync(resolve(dot, "bridge-token"), "utf8").trim();
@@ -20,8 +21,8 @@ export const coinPage = (mint: string) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(m
 export const onPump = (url: string) => { try { return new URL(url).hostname === "pump.fun"; } catch { return false; } };
 export const blocked = (title: string) => /just a moment|security verification|attention required/i.test(title);
 
-// A private window with no extensions and no sync, so nothing of the owner's can load into it.
-Bun.spawn([EDGE, `--remote-debugging-port=${PORT}`, `--user-data-dir=${resolve(dot, "browser-clean")}`, "--inprivate", "--disable-extensions", "--disable-sync", "--no-first-run", "--no-default-browser-check", "--window-size=1320,860", "about:blank"], { stdout: "ignore", stderr: "ignore" });
+// Its own profile with no extensions and no sync, so nothing of the owner's can load into it.
+Bun.spawn([EDGE, `--remote-debugging-port=${PORT}`, `--user-data-dir=${resolve(dot, "browser-clean")}`, "--disable-extensions", "--disable-sync", "--no-first-run", "--no-default-browser-check", "--window-size=1320,860", "about:blank"], { stdout: "ignore", stderr: "ignore" });
 let page: { webSocketDebuggerUrl: string } | null = null;
 for (let i = 0; i < 60 && !page; i++) {
   await sleep(500);
@@ -37,6 +38,7 @@ ws.onmessage = e => { const m = JSON.parse(String(e.data)); waits.get(m.id)?.(m.
 const cdp = (method: string, params: Record<string, unknown> = {}) => new Promise<any>(r => { waits.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
 await cdp("Page.enable");
 log("browser open on pump.fun");
+
 
 let here = HOME, wasBlocked = false, lastTrade = 0, step = 0, recent: string[] = [];
 const STOP_MS = 22_000, PORTFOLIO = `https://pump.fun/profile/${KRIS_WALLET}`;
@@ -62,12 +64,20 @@ async function visit() {
   posted = stop === "callout" ? await value(`(() => { let e = [...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)}); while (e && e.innerText.length < 80) e = e.parentElement; return e ? e.innerText : ""; })()`) ?? "" : "";
   if (await click(href)) log(`${stop}: ${href}`);
 }
+/** His real range when he holds a bot on this coin; otherwise the range his rules would use. */
+async function rangeOf(mint: string, coin: string, cap: number | null) {
+  const ov: any = await fetch(`${view}/api/overview`, { headers: { cookie: `slrd_web=${bridgeToken}` }, signal: AbortSignal.timeout(10_000) }).then(r => r.json()).catch(() => null);
+  const bot = (ov?.bots ?? []).find((b: any) => b.mint === mint && !b.inactive && b.range);
+  if (bot) return { coin, cap, buy: bot.range.buy, sell: bot.range.sell, steps: bot.steps, live: true };
+  return { coin, cap, buy: SLOT_CONFIG.newBuyUsd, sell: SLOT_CONFIG.newSellUsd, steps: slotPlan(SLOT_CONFIG.newBuyUsd, SLOT_CONFIG.newSellUsd).steps, live: false };
+}
 /** What this stop shows, for Kris to think about: see safeFacts for why it is only numbers and names. */
 let posted = "";
 async function read(stop: TourStop) {
   const seen = JSON.parse(await value(`JSON.stringify({ title: document.title, path: location.pathname, text: document.body.innerText, coins: [...document.querySelectorAll('a[href^="/coin/"]')].filter(a => !a.getAttribute("href").includes("highlight_callout")).slice(0, 6).map(a => a.innerText) })`) ?? "null") as { title: string; path: string; text: string; coins: string[] } | null;
   if (!seen || blocked(seen.title)) return;
   const coin = /^\/coin\//.test(seen.path), at = seen.text.indexOf("Market cap");
+  await value(panelScript(coin ? await rangeOf(seen.path.slice(6), safeName(seen.title.split(/ \$| \|/)[0] ?? ""), capOf(seen.text.slice(at, at + 200))) : null));
   writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: Date.now(), stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
