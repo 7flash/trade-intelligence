@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { rangeLevels, targetPlan } from "../packages/core/src/runtime/target-inventory.ts";
 import { agentPlan, agentSize, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
@@ -26,9 +27,9 @@ test("no words leave the reader: an instruction in a post becomes nothing but co
   expect(calloutSignals([])).toBeNull();
 });
 test("sizes the whole balance over the slots left, above the reserve, up to the cap", () => {
-  expect(agentSize(1.0, 7)).toBe(0.039); expect(agentSize(0.63, 28)).toBe(0.2); expect(agentSize(0.13, 29)).toBe(0.03);
+  expect(agentSize(1.0, 7)).toBe(0.07); expect(agentSize(0.63, 28)).toBe(0.2); expect(agentSize(0.13, 29)).toBe(0);
   expect(agentSize(0.63, 30)).toBe(0); expect(agentSize(0.11, 0)).toBe(0); expect(agentSize(100, 0)).toBe(0.2);
-  expect(agentSize(0.63, 0)).toBe(0.025); // a small balance still buys, at about $2
+  expect(agentSize(0.63, 0)).toBe(0.07); // a small balance still buys enough to post a callout
   expect(agentSize(0.12, 0)).toBe(0);
 });
 const clean: CoinRisk = { bundledPct: 5, earlyBoughtPct: 10, top10Pct: 20, goodHolders: 0, devFunded: 0 }, ok = { risk: clean, capUsd: 50_000, held: false, closedAgoMs: null, size: 0.05, ageMs: 3_600_000, callouts: 4, top10HeldPct: 12 };
@@ -98,4 +99,11 @@ test("reads cap and age from the coin page", () => {
   expect(pageFacts(page, "CkYPxSP2")).toEqual({ capUsd: 49_700, ageMs: 3_600_000 });
   expect(pageFacts(["BTC", "1mo", "167", "C5xp…pump", "Market cap", "$14.5M"].join(nl), "C5xph2").ageMs).toBe(2_592_000_000);
   expect(pageFacts("nothing here", "CkYP")).toEqual({ capUsd: null, ageMs: null });
+});
+test("the smallest position's first buy is enough to post a callout", () => { // pump.fun wants $2 held: 0.0222 SOL at $90
+  const cap = 100_000, size = agentSize(0.17, 0), p = agentPlan(cap, size);
+  const first = targetPlan({ levels: rangeLevels(p.buy, p.sell, p.steps).map(l => l / 1e9), budgetSol: size, balanceRaw: 0n, decimals: 6, priceSol: cap / 1e9 }).action;
+  expect(first?.side).toBe("buy");
+  expect(first?.side === "buy" ? first.amountSol : 0).toBeGreaterThan(0.028);
+  expect(agentSize(0.16, 0)).toBe(0); // under that he waits rather than buy a bag he cannot call
 });

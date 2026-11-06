@@ -2,7 +2,7 @@
  * Callout text is written by strangers and never reaches the model: this code reads it and he gets counts. */
 import { goodHolders, SLOT_CONFIG, slotRange } from "./kris-slots.ts";
 
-export const AGENT_LIMITS = { maxPositions: 30, maxSizeSol: 0.2, minSizeSol: 0.025, reserveSol: 0.1, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs,
+export const AGENT_LIMITS = { maxPositions: 30, maxSizeSol: 0.2, minSizeSol: 0.07, reserveSol: 0.1, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs,
   /** Only rules out extremes: the reading has shown over 100%, so it is not a precise line. To check. */
   maxEarlyPct: 60,
   /** 149 tracked coins: median -19% in the first 5 minutes, -3% from 5 to 10. */
