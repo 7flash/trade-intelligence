@@ -4,9 +4,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { pickCoin, pickScreener, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, calloutsScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
+import { pickCoin, pickScreener, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, calloutsScript, holdersScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
 import { execution, nextCallout, nextOrder, readOrder, writeCallout, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
-import { calloutSignals, splitCallouts, type Callout } from "./tui/agent-trader.ts";
+import { calloutSignals, splitCallouts, topHoldersPct, type Callout } from "./tui/agent-trader.ts";
 import { safeQuotes } from "./tui/callout-words.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
@@ -105,11 +105,12 @@ async function read(stop: TourStop) {
   if (!seen || blocked(seen.title)) return;
   const coin = /^\/coin\//.test(seen.path), at = seen.text.indexOf("Market cap");
   const readNow = Date.now(); readAt = coin ? readNow : 0;
+  const holders = coin ? topHoldersPct(await value(holdersScript) ?? "") : null; // the Holders tab is open first
   const callouts = coin ? await readCallouts().catch(() => null) : null;
   writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: readNow, stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
-    callout: stop === "callout" ? safeFacts(posted, 10) : [], callouts }));
+    callout: stop === "callout" ? safeFacts(posted, 10) : [], callouts, top10HeldPct: holders }));
 }
 /** A real mouse click, with Kris's cursor on the stream going there first. */
 async function realClick(at: { x: number; y: number }, box: Pick<TradeBox, "wide" | "high">, travel = 1_100) {

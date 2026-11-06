@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { agentPlan, agentSize, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -31,12 +31,15 @@ test("sizes the whole balance over the slots left, above the reserve, up to the 
   expect(agentSize(0.63, 0)).toBe(0.025); // a small balance still buys, at about $2
   expect(agentSize(0.12, 0)).toBe(0);
 });
-const clean: CoinRisk = { bundledPct: 5, earlyBoughtPct: 10, top10Pct: 20, goodHolders: 0 }, ok = { risk: clean, capUsd: 50_000, held: false, closedAgoMs: null, size: 0.05 };
+const clean: CoinRisk = { bundledPct: 5, earlyBoughtPct: 10, top10Pct: 20, goodHolders: 0 }, ok = { risk: clean, capUsd: 50_000, held: false, closedAgoMs: null, size: 0.05, ageMs: 3_600_000 };
 test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen(ok)).toBeNull();
   expect(refuseOpen({ ...ok, risk: null })).toBe("no bundle read");
   expect(refuseOpen({ ...ok, risk: { ...clean, bundledPct: 30 } })).toBe("bundled");
-  expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 60 } })).toBe("bought early");
+  expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 25 } })).toBe("bought early");
+  expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 45 } })).toBe("bought early"); // the TRUMP rug
+  expect(refuseOpen({ ...ok, ageMs: 276_000 })).toBe("too new"); // bought 4m36s after launch
+  expect(refuseOpen({ ...ok, ageMs: null })).toBe("too new");
   expect(refuseOpen({ ...ok, held: true })).toBe("already held");
   expect(refuseOpen({ ...ok, size: 0 })).toBe("no slot or no SOL");
   expect(refuseOpen({ ...ok, capUsd: 3_000 })).toBe("cap too small");
@@ -64,4 +67,8 @@ test("splits the tab's text into posts", () => {
   expect(p[0]).toMatchObject({ ageMin: 120, positionUsd: 7700, profitUsd: 3202.94 });
   expect(p[1]!.positionUsd).toBeNull();
   expect(splitCallouts("someone|26.4M|2.73%|$7.7K|".replaceAll("|", String.fromCharCode(10)))).toEqual([]);
+});
+test("adds up the top holders from the Holders tab", () => {
+  expect(topHoldersPct("a26.4M2.73%$7.7K2.73%+$3,202 b18.6M1.86%$922 c5M1.5%$1")).toBe(6.1);
+  expect(topHoldersPct("no percent here")).toBeNull();
 });

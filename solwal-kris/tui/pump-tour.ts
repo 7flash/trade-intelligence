@@ -70,6 +70,8 @@ export function refuseMain(box: TradeBox, side: "buy" | "sell", amountUsd: numbe
 
 /** A button by its words, in window pixels. */
 export const buttonScript = (pattern: string) => `(() => { const b = [...document.querySelectorAll("button")].filter(e => ${pattern}.test((e.textContent || "").trim()) && e.getBoundingClientRect().width > 0)[0]; if (!b) return "null"; b.scrollIntoView({ block: "nearest" }); const r = b.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2; return JSON.stringify({ x, y, wide: innerWidth, high: innerHeight, hit: document.elementFromPoint(x, y)?.closest("button") === b }); })()`;
+/** The words of the Holders tab, for the top holders' share. Only the percents are used. */
+export const holdersScript = `(() => { const tab = [...document.querySelectorAll("button")].find(b => /^Holders/.test((b.textContent || "").trim()) && b.getBoundingClientRect().width > 0); const panel = tab?.getAttribute("aria-selected") === "true" ? document.getElementById(tab.getAttribute("aria-controls") ?? "") : null; return panel?.innerText ?? ""; })()`;
 /** The words of the open Callouts tab, for tui/agent-trader.ts to split into posts. */
 export const calloutsScript = `(() => { const tab = [...document.querySelectorAll("button")].find(b => /^Callouts/.test((b.textContent || "").trim()) && b.getBoundingClientRect().width > 0); const panel = tab?.getAttribute("aria-selected") === "true" ? document.getElementById(tab.getAttribute("aria-controls") ?? "") : null; return panel?.innerText ?? ""; })()`;
 /** The callout box, wherever the site opens it. */

@@ -2,7 +2,11 @@
  * Callout text is written by strangers and never reaches the model: this code reads it and he gets counts. */
 import { goodHolders, SLOT_CONFIG, slotRange } from "./kris-slots.ts";
 
-export const AGENT_LIMITS = { maxPositions: 30, maxSizeSol: 0.2, minSizeSol: 0.025, reserveSol: 0.1, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs };
+export const AGENT_LIMITS = { maxPositions: 30, maxSizeSol: 0.2, minSizeSol: 0.025, reserveSol: 0.1, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs,
+  /** 100 tracked coins: at 25%+ bought in the first 3s, 43% fell 30% without first rising 30%, against 14% of the rest. */
+  maxEarlyPct: 25,
+  /** 149 tracked coins: median -19% in the first 5 minutes, -3% from 5 to 10. */
+  minAgeMs: 300_000 };
 export type Callout = { who: string; body: string; ageMin: number | null; positionUsd: number | null; profitUsd: number | null; likes: number; views: number };
 
 const money = (s?: string) => { const m = /^([+\-−]?)\$([\d,.]+)([KMB]?)/.exec(s ?? ""); if (!m) return null; return (m[1] === "-" || m[1] === "−" ? -1 : 1) * Number(m[2]!.replace(/,/g, "")) * ({ K: 1e3, M: 1e6, B: 1e9 }[m[3]!] ?? 1); };
@@ -46,6 +50,12 @@ export function coinRisk(info: { recent?: unknown[]; earlyBoughtPct?: number | n
   return { bundledPct: Math.round(share * 100), earlyBoughtPct: Math.round(info.earlyBoughtPct ?? 100), top10Pct: info.exact ? Math.round(tops.reduce((a, b) => a + b, 0)) : null, goodHolders: goodHolders(info.wallets ?? []) };
 }
 
+/** The share of supply the top holders own, from the numbers in pump.fun's Holders tab: each row shows its percent, sometimes twice. */
+export function topHoldersPct(text: string, top = 10) {
+  const all = [...text.matchAll(/(\d+(?:\.\d+)?)%/g)].map(m => Number(m[1])), rows = all.filter((n, i) => n !== all[i - 1]).slice(0, top);
+  return rows.length >= 3 ? Math.round(rows.reduce((a, b) => a + b, 0) * 10) / 10 : null;
+}
+
 /** The whole balance over the slots left, above the reserve, never over the cap, and never so small a step cannot send. */
 export function agentSize(freeSol: number, open: number, l = AGENT_LIMITS) {
   const slots = l.maxPositions - open; if (slots <= 0) return 0;
@@ -54,13 +64,14 @@ export function agentSize(freeSol: number, open: number, l = AGENT_LIMITS) {
   return Math.floor(Math.max(l.minSizeSol, Math.min(l.maxSizeSol, spare / slots)) * 1000) / 1000;
 }
 /** Why he may not open this coin, or null. No answer on bundles means no buy. */
-export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; held: boolean; closedAgoMs: number | null; size: number }, l = AGENT_LIMITS) {
+export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; held: boolean; closedAgoMs: number | null; size: number; ageMs: number | null }, l = AGENT_LIMITS) {
   if (o.held) return "already held";
   if (!o.size) return "no slot or no SOL";
   if (!o.capUsd || o.capUsd < l.minCapUsd) return "cap too small";
   if (!o.risk) return "no bundle read";
   if (o.risk.bundledPct >= SLOT_CONFIG.maxBundleShare * 100) return "bundled";
-  if (o.risk.earlyBoughtPct >= SLOT_CONFIG.maxEarlyPct) return "bought early";
+  if (o.risk.earlyBoughtPct >= l.maxEarlyPct) return "bought early";
+  if (o.ageMs == null || o.ageMs < l.minAgeMs) return "too new";
   if (o.closedAgoMs != null && o.closedAgoMs < l.reopenAfterMs) return "closed recently";
   return null;
 }

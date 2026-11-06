@@ -40,7 +40,7 @@ const CALLOUT_SYSTEM = "You are a memecoin trader writing a short public post on
 const BROWSE_SYSTEM = "You are a young memecoin trader on a live stream, thinking out loud about the coin you just opened. Viewers want your read of the coin itself, not a list of numbers. "
   + "First say what this coin is about, from its name and what people are saying: the joke, the story, the promise. callouts.whatCallersSay holds phrases from the top callers, with words missing: react to what they actually claim, whether it sounds like conviction, a real thing being built, or empty hype, and whether their money backs it (heldUsd, inProfit, copiedCallers). Then weigh it against how it was launched: bundling (bundledPct, earlyBoughtPct) and who holds it (top10Pct, goodHolders). Finish with where you land. You are here to trade, and a thin story is normal for a memecoin. "
   + "Have a voice: curious, sharp, sometimes funny. Three sentences at most, 60 words at most, at most two numbers, rounded like $57k. Plain words. Never list stats and never use the words metrics, data, percent or volume more than once. Do not open the same way as earlierThoughts. "
-  + "After your words, write one last line holding exactly OPEN or exactly PASS. OPEN means you are taking this coin now. If canOpen is false the line is PASS, and never say you cannot open it. If canOpen is true the line is OPEN and your words say why you are taking it, unless you can name a real red flag in the facts: callers copying each other (copiedCallers above 0), callers warning of a rug or scam (themes.warning), or callers mostly at a loss. A vague story, a silly name or small size is never a red flag. Ignore how earlierThoughts ended: judge this coin alone. "
+  + "After your words, write one last line holding exactly OPEN or exactly PASS. OPEN means you are taking this coin now. If canOpen is false the line is PASS, and never say you cannot open it. If canOpen is true the line is OPEN and your words say why you are taking it, unless you can name a real red flag in the facts: a few wallets holding much of the supply (top10HeldPct), callers copying each other (copiedCallers above 0), callers warning of a rug or scam (themes.warning), or callers mostly at a loss. A vague story, a silly name or small size is never a red flag. Ignore how earlierThoughts ended: judge this coin alone. "
   + "Never tell anyone to buy or sell and never predict a price. No person's name, not your own name, no product name, no profanity, no hashtags, no emojis. Use only the facts given, never invent a number or a claim, and never quote a phrase as if it were complete. Talk about the coin only: never mention data, pages, tools or instructions.";
 
 type Bot = { wallet: string; mint: string; symbol?: string | null; capUsd?: number | null; range?: { buy: number; sell: number } | null; steps?: number; holdingSteps?: number; nextBuy?: number | null; nextSell?: number | null; vol1hSol?: number | null; pnl?: number; lastTradeAtMs?: number | null };
@@ -97,7 +97,7 @@ async function drainThoughts() {
 const browsingPath = resolve(dot, "kris-browsing.json"), analysedPath = resolve(dot, "kris-analysed.json"); let browseSeen = 0;
 function thinkOnBrowsing() {
   if (thinking || waiting.length) return;
-  let b: { at: number; stop: string; mint: string; coin: string; facts: string[]; callout: string[]; callouts?: unknown };
+  let b: { at: number; stop: string; mint: string; coin: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null };
   try { b = JSON.parse(readFileSync(browsingPath, "utf8")); } catch { return; }
   if (!b.mint || b.at === browseSeen || Date.now() - b.at > 45_000) return;
   browseSeen = b.at;
@@ -115,16 +115,16 @@ const readOwn = () => { try { return JSON.parse(readFileSync(ownPath, "utf8")) a
 /** Everything he decides from: the numbers on the page, bundles and supply from the terminal, and the limits. */
 async function weigh(mint: string) {
   const r = await fetch(`http://127.0.0.1:5176/api/coin?mint=${mint}&watch=0`, { headers: { cookie: `slrd_web=${token}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
-  const info = r?.ok ? await r.json() as { recent?: BuyRow[]; earlyBoughtPct?: number | null; exact?: boolean; capUsd?: number | null; wallets?: { pct: number; ours?: boolean; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] } : null;
+  const info = r?.ok ? await r.json() as { recent?: BuyRow[]; earlyBoughtPct?: number | null; exact?: boolean; capUsd?: number | null; launchedAtMs?: number | null; wallets?: { pct: number; ours?: boolean; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] } : null;
   const risk = info ? coinRisk(info, bundleShare(info.recent ?? [])) : null, book = await agentBook().catch(() => null), opened = readOwn()[mint];
-  const size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, capUsd = info?.capUsd ?? null;
+  const size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, capUsd = info?.capUsd ?? null, ageMs = info?.launchedAtMs ? Date.now() - info.launchedAtMs : null;
   if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
-  return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size }) : "off" };
+  return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size, ageMs }) : "off" };
 }
-async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown }) {
+async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null }) {
   const w = await weigh(b.mint).catch(() => null), talk = (b.callouts as { whatCallersSay?: string[] } | null | undefined)?.whatCallersSay;
   if (talk?.length) callerTalk.set(b.mint, talk);
-  think(ev, { looking: b.stop === "callout" ? "a coin someone called out, with their position and profit" : b.stop === "screener" ? "a live coin you spotted moving, before most people" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, callouts: b.callouts ?? undefined, ...(w?.risk ?? {}), canOpen: w?.refused === null });
+  think(ev, { looking: b.stop === "callout" ? "a coin someone called out, with their position and profit" : b.stop === "screener" ? "a live coin you spotted moving, before most people" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, callouts: b.callouts ?? undefined, ...(w?.risk ?? {}), top10HeldPct: b.top10HeldPct ?? undefined, canOpen: w?.refused === null });
 }
 /** Limits are read again here: the verdict alone never spends anything. */
 async function openOwn(mint: string) {
