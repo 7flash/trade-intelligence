@@ -106,6 +106,7 @@ async function agentBook() {
   return { name, mints: new Set(mine.map(x => x.mint)), freeSol: s.wallets?.find(w => w.name === name)?.sol ?? 0 };
 }
 const autoPath = resolve(dot, "kris-auto"), ownPath = resolve(dot, "kris-own.json");
+const ownCoins = () => { try { return readFileSync(resolve(dot, "own-coins"), "utf8").split(/\s+/).filter(Boolean); } catch { return []; } };
 const readOwn = () => { try { return JSON.parse(readFileSync(ownPath, "utf8")) as Record<string, number>; } catch { return {}; } };
 /** Everything he decides from: the numbers on the page, bundles and supply from the terminal, and the limits. */
 async function weigh(mint: string) {
@@ -113,6 +114,7 @@ async function weigh(mint: string) {
   const info = r?.ok ? await r.json() as { recent?: BuyRow[]; earlyBoughtPct?: number | null; exact?: boolean; capUsd?: number | null; wallets?: { pct: number; ours?: boolean; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] } : null;
   const risk = info ? coinRisk(info, bundleShare(info.recent ?? [])) : null, book = await agentBook().catch(() => null), opened = readOwn()[mint];
   const size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, capUsd = info?.capUsd ?? null;
+  if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
   return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size }) : "off" };
 }
 async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown }) {
@@ -134,6 +136,7 @@ const calledPath = resolve(dot, "kris-called.json"), wantCallout = new Set<strin
 let called = new Set<string>(); try { called = new Set(JSON.parse(readFileSync(calledPath, "utf8")) as string[]); } catch {}
 function sendCallouts() {
   for (const mint of wantCallout) {
+    if (ownCoins().includes(mint)) { wantCallout.delete(mint); continue; }
     const said = events.find(e => e.mint === mint && e.kind === "position" && e.thought) ?? events.find(e => e.mint === mint && e.kind === "browse" && e.thought);
     if (!said?.thought) continue;
     wantCallout.delete(mint); called.add(mint); writeFileSync(calledPath, JSON.stringify([...called]));

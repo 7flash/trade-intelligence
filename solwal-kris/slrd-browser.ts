@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
 import { pickCoin, pickScreener, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, calloutsScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
-import { execution, nextCallout, nextOrder, readOrder, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
+import { execution, nextCallout, nextOrder, readOrder, writeCallout, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
 import { calloutSignals, splitCallouts, type Callout } from "./tui/agent-trader.ts";
 import { safeQuotes } from "./tui/callout-words.ts";
 
@@ -145,7 +145,10 @@ async function postCallout(job: CalloutJob) {
   for (let i = 0; i < 24; i++) { await sleep(500); if ((await value("location.pathname")) === `/coin/${job.mint}` && await readBox()) break; }
   let open = false;
   for (let i = 0; i < 12 && !open; i++) { await sleep(700); open = await tap("/^Add your callout/"); } // the holder's card loads after the trade box
-  if (!open) return log(`callout ${job.mint.slice(0, 6)}: no button`);
+  if (!open) { // right after a buy the page may not know he holds it yet
+    if ((job.tries ?? 0) < 3) setTimeout(() => writeCallout(root, { ...job, tries: (job.tries ?? 0) + 1 }), 30_000);
+    return log(`callout ${job.mint.slice(0, 6)}: no button, try ${(job.tries ?? 0) + 1}`);
+  }
   let form: any = null;
   for (let i = 0; i < 12 && !form?.input; i++) { await sleep(500); form = JSON.parse(await value(calloutFormScript) ?? "null"); } // the box takes a moment to open
   log(`callout form: ${JSON.stringify(form).slice(0, 300)}`);

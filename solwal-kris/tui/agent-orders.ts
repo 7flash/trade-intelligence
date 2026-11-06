@@ -42,7 +42,7 @@ export function orderDesk(root: string, address: string, keyless = false): Order
 }
 
 /** A public callout waiting for the browser: one per position, written once and then gone. */
-export type CalloutJob = { mint: string; text: string; dry?: boolean };
+export type CalloutJob = { mint: string; text: string; dry?: boolean; tries?: number };
 const calloutDir = (root: string) => join(root, ".range-bots", "agent-callouts");
 export function writeCallout(root: string, job: CalloutJob) { mkdirSync(calloutDir(root), { recursive: true }); const p = join(calloutDir(root), `${job.mint}.json`); writeFileSync(`${p}.tmp`, JSON.stringify(job)); renameSync(`${p}.tmp`, p); }
 export function nextCallout(root: string): CalloutJob | null {
