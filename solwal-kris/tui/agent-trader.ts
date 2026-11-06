@@ -64,7 +64,7 @@ export function agentSize(freeSol: number, open: number, l = AGENT_LIMITS) {
   return Math.floor(Math.max(l.minSizeSol, Math.min(l.maxSizeSol, spare / slots)) * 1000) / 1000;
 }
 /** Why he may not open this coin, or null. No answer on bundles means no buy. */
-export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; held: boolean; closedAgoMs: number | null; size: number; ageMs: number | null }, l = AGENT_LIMITS) {
+export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; held: boolean; closedAgoMs: number | null; size: number; ageMs: number | null; callouts: number }, l = AGENT_LIMITS) {
   if (o.held) return "already held";
   if (!o.size) return "no slot or no SOL";
   if (!o.capUsd || o.capUsd < l.minCapUsd) return "cap too small";
@@ -72,6 +72,7 @@ export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; he
   if (o.risk.bundledPct >= SLOT_CONFIG.maxBundleShare * 100) return "bundled";
   if (o.risk.earlyBoughtPct >= l.maxEarlyPct) return "bought early";
   if (o.ageMs == null || o.ageMs < l.minAgeMs) return "too new";
+  if (!o.callouts) return "no callouts"; // nobody has put their name on it yet
   if (o.closedAgoMs != null && o.closedAgoMs < l.reopenAfterMs) return "closed recently";
   return null;
 }

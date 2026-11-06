@@ -105,7 +105,8 @@ async function read(stop: TourStop) {
   if (!seen || blocked(seen.title)) return;
   const coin = /^\/coin\//.test(seen.path), at = seen.text.indexOf("Market cap");
   const readNow = Date.now(); readAt = coin ? readNow : 0;
-  const holders = coin ? topHoldersPct(await value(holdersScript) ?? "") : null; // the Holders tab is open first
+  let holders: number | null = null; // the site stays on the last tab used, so he opens Holders himself
+  if (coin) { await tap("/^Holders/").catch(() => false); for (let i = 0; i < 6 && holders == null; i++) { await sleep(500); holders = topHoldersPct(await value(holdersScript) ?? ""); } }
   const callouts = coin ? await readCallouts().catch(() => null) : null;
   writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: readNow, stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",

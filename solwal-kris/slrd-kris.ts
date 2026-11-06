@@ -119,11 +119,13 @@ async function weigh(mint: string) {
   const risk = info ? coinRisk(info, bundleShare(info.recent ?? [])) : null, book = await agentBook().catch(() => null), opened = readOwn()[mint];
   const size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, capUsd = info?.capUsd ?? null, ageMs = info?.launchedAtMs ? Date.now() - info.launchedAtMs : null;
   if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
-  return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size, ageMs }) : "off" };
+  return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0 }) : "off" };
 }
 async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null }) {
-  const w = await weigh(b.mint).catch(() => null), talk = (b.callouts as { whatCallersSay?: string[] } | null | undefined)?.whatCallersSay;
+  const talk = (b.callouts as { whatCallersSay?: string[] } | null | undefined)?.whatCallersSay;
   if (talk?.length) callerTalk.set(b.mint, talk);
+  calloutCount.set(b.mint, (b.callouts as { posts?: number } | null | undefined)?.posts ?? 0);
+  const w = await weigh(b.mint).catch(() => null);
   think(ev, { looking: b.stop === "callout" ? "a coin someone called out, with their position and profit" : b.stop === "screener" ? "a live coin you spotted moving, before most people" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, callouts: b.callouts ?? undefined, ...(w?.risk ?? {}), top10HeldPct: b.top10HeldPct ?? undefined, canOpen: w?.refused === null });
 }
 /** Limits are read again here: the verdict alone never spends anything. */
@@ -139,7 +141,7 @@ async function openOwn(mint: string) {
 /** One public callout per position, right after its first buy, from what he already wrote about it. */
 const calledPath = resolve(dot, "kris-called.json"), wantCallout = new Set<string>();
 let called = new Set<string>(); try { called = new Set(JSON.parse(readFileSync(calledPath, "utf8")) as string[]); } catch {}
-const callerTalk = new Map<string, string[]>();
+const callerTalk = new Map<string, string[]>(), calloutCount = new Map<string, number>();
 async function composeCallout(symbol: string | null, myRead: string, whatCallersSay: string[]) {
   let text = "";
   for await (const chunk of streamLLM([{ role: "system", content: CALLOUT_SYSTEM }, { role: "user", content: JSON.stringify({ coin: symbol, myRead, whatCallersSay }) }], { timeoutMs: 60_000 })) text += chunk;
