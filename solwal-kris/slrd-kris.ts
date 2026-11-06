@@ -226,7 +226,7 @@ for (;;) {
       seenBots.add(b.mint);
       if (seeded && at && at > (prev ?? 0)) {
         const path = resolve(dot, `term-${b.wallet}-${b.mint}.log`), fill = existsSync(path) ? lastFill(readFileSync(path, "utf8")) : null;
-        const ev = add({ atMs: at, kind: "trade", mint: b.mint, symbol: b.symbol ?? null, title: tradeTitle(fill), reaction: tradeReaction(fill?.side ?? null, b.holdingSteps ?? 0, b.pnl ?? 0) ?? undefined });
+        const ev = add({ atMs: at, kind: "trade", mint: b.mint, symbol: b.symbol ?? null, title: tradeTitle(fill), tx: fill?.tx, reaction: tradeReaction(fill?.side ?? null, b.holdingSteps ?? 0, b.pnl ?? 0) ?? undefined });
         if (ev && fill) void think(ev, { event: fill.side === "SELL" ? "sold" : "bought", sol: fill.sol, ...facts(b) });
       }
       if (at) seenTrade.set(b.mint, Math.max(at, prev ?? 0));

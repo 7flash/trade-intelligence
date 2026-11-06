@@ -58,4 +58,7 @@ test("an agent fill reads as a normal fill, so thoughts and volume count it", ()
   const line = "2026-11-06T12:00:00.000Z annotation target w m: BUY confirmed CONFIRMED -0.0110 SOL  ";
   expect(lastFill(line)?.side).toBe("BUY");
   expect(tradedFromLog(line).trades).toBe(1);
+  const sig = "5MctnXKpsPXtPPViKyhQs3mFjWYHNyvyX2SrBf9aHZrAGeryZecFk4QYzZKabcdefghjkmnpqrstuvwx12345678";
+  expect(lastFill(`${line} ${sig}`)?.tx).toBe(sig);
+  expect(lastFill(line)?.tx).toBeUndefined();
 });

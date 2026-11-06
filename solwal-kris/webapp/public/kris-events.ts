@@ -1,10 +1,10 @@
 /** Pure helpers for Kris events: reading a bot's last fill and cleaning decision text for the public view. */
-export type KrisEvent = { id: string; atMs: number; kind: "trade" | "position" | "decision" | "range" | "coin" | "migrated" | "result" | "review"; mint: string; symbol: string | null; title: string; thought?: string; reaction?: string };
+export type KrisEvent = { id: string; atMs: number; kind: "trade" | "position" | "decision" | "range" | "coin" | "migrated" | "result" | "review"; mint: string; symbol: string | null; title: string; tx?: string; thought?: string; reaction?: string };
 
 /** The last confirmed BUY or SELL in a bot log. */
 export function lastFill(log: string) {
-  const hits = [...log.matchAll(/^(\S+Z) .*(BUY|SELL) confirmed CONFIRMED ([+-]?[\d.]+) SOL/gm)], m = hits[hits.length - 1];
-  return m ? { atMs: Date.parse(m[1]!), side: m[2] as "BUY" | "SELL", sol: Math.abs(Number(m[3])) } : null;
+  const hits = [...log.matchAll(/^(\S+Z) .*(BUY|SELL) confirmed CONFIRMED ([+-]?[\d.]+) SOL(?: +([1-9A-HJ-NP-Za-km-z]{64,90}))?/gm)], m = hits[hits.length - 1];
+  return m ? { atMs: Date.parse(m[1]!), side: m[2] as "BUY" | "SELL", sol: Math.abs(Number(m[3])), tx: m[4] } : null;
 }
 export const tradeTitle = (f: { side: string; sol: number } | null) => f ? `${f.side === "BUY" ? "Bought" : "Sold"} ${f.sol.toFixed(4)} SOL` : "Traded";
 
