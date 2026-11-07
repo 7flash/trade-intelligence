@@ -1,7 +1,7 @@
 /** Where Kris's browser goes next on pump.fun. Only the front page, Kris's own profile, and coin pages are allowed. */
-export type TourStop = "hot" | "callout" | "screener" | "portfolio" | "home";
+export type TourStop = "hot" | "movers" | "callout" | "screener" | "portfolio" | "home";
 /** Coins are where he thinks, so nearly every stop is one. The front page is only passed through to pick the next. */
-export const TOUR: TourStop[] = ["callout", "screener", "hot", "callout", "screener", "callout", "screener", "hot", "portfolio"];
+export const TOUR: TourStop[] = ["hot", "movers", "callout", "screener", "hot", "movers", "callout", "screener", "portfolio"];
 import { slotQualifies, type SlotCoin } from "./kris-slots.ts";
 const COIN = /^\/coin\/[1-9A-HJ-NP-Za-km-z]{32,44}(\?highlight_callout=[\w-]+)?$/;
 
