@@ -35,6 +35,8 @@ test("sizes the whole balance over the slots left, above the reserve, up to the 
 const clean: CoinRisk = { bundledPct: 5, earlyBoughtPct: 10, top10Pct: 20, goodHolders: 0, devFunded: 0 }, ok = { risk: clean, capUsd: 50_000, held: false, closedAgoMs: null, size: 0.05, ageMs: 3_600_000, callouts: 4, top10HeldPct: 12 };
 test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen(ok)).toBeNull();
+  expect(refuseOpen({ ...ok, lastOpenAgoMs: 600_000 })).toBe("just opened one");
+  expect(refuseOpen({ ...ok, lastOpenAgoMs: 720_000 })).toBeNull();
   expect(refuseOpen({ ...ok, risk: null })).toBe("no bundle read");
   expect(refuseOpen({ ...ok, risk: { ...clean, bundledPct: 30 } })).toBe("bundled");
   expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 60 } })).toBe("bought early");

@@ -142,10 +142,10 @@ async function weigh(mint: string) {
   const r = await fetch(`http://127.0.0.1:5176/api/coin?mint=${mint}&watch=0`, { headers: { cookie: `slrd_web=${token}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
   const info = r?.ok ? await r.json() as { recent?: BuyRow[]; earlyBoughtPct?: number | null; exact?: boolean; capUsd?: number | null; launchedAtMs?: number | null; creator?: string | null; clusters?: { source?: string; members?: number }[]; transfers?: { from?: string[] }[]; wallets?: { pct: number; ours?: boolean; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] } : null;
   const risk = info ? coinRisk(info, bundleShare(info.recent ?? [])) : null, book = await agentBook().catch(() => null), opened = readOwn()[mint];
-  const size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, onPage = pageRead.get(mint), capUsd = info?.capUsd || onPage?.capUsd || null, ageMs = info?.launchedAtMs ? Date.now() - info.launchedAtMs : onPage?.ageMs ?? null;
+  const lastOpen = Math.max(0, ...Object.values(readOwn())), size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, onPage = pageRead.get(mint), capUsd = info?.capUsd || onPage?.capUsd || null, ageMs = info?.launchedAtMs ? Date.now() - info.launchedAtMs : onPage?.ageMs ?? null;
   if (cantBuy().includes(mint)) return { risk, capUsd, size, book, refused: "cannot buy it" };
   if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
-  return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0, top10HeldPct: heldTop.get(mint) ?? null }) : "off" };
+  return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, lastOpenAgoMs: lastOpen ? Date.now() - lastOpen : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0, top10HeldPct: heldTop.get(mint) ?? null }) : "off" };
 }
 async function analyse(ev: KrisEvent, b: { stop: string; asked?: boolean; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null; page?: { capUsd: number | null; ageMs: number | null; site?: string | null } | null }) {
   const talk = (b.callouts as { whatCallersSay?: string[] } | null | undefined)?.whatCallersSay;
@@ -274,7 +274,7 @@ async function dropStuck() {
   }
 }
 /** Cash too low to open a position: sell out of the lowest-volume coin he opened, one at a time so the cash can arrive. */
-let lastClose = 0; const CASH_READY_SOL = 0.5;
+let lastClose = 0; const CASH_READY_SOL = 0.25; // 0.5 sold a coin every 2 minutes, and not quiet ones ($15k hour volume); opens run down to 0.2
 async function closeForCash() {
   if (Date.now() - lastClose < 60_000) return;
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; wallets?: { name: string; sol?: number | null }[]; bots: { wallet: string; mint: string; symbol?: string | null; valueSol?: number | null }[] };

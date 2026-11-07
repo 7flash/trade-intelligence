@@ -1,7 +1,7 @@
 /** What lets the agent open positions on his own: callouts turned into numbers, and the limits he cannot pass. */
 import { goodHolders, SLOT_CONFIG, slotRange } from "./kris-slots.ts";
 
-export const AGENT_LIMITS = { maxPositions: 60, maxSizeSol: 0.2, minSizeSol: 0.07, reserveSol: 0.13, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs,
+export const AGENT_LIMITS = { maxPositions: 60, maxSizeSol: 0.2, minSizeSol: 0.07, reserveSol: 0.13, openGapMs: 720_000, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs,
   /** Only rules out extremes: the reading has shown over 100%, so it is not a precise line. To check. */
   maxEarlyPct: 60,
   /** 149 tracked coins: median -19% in the first 5 minutes, -3% from 5 to 10. */
@@ -78,7 +78,7 @@ export function agentSize(freeSol: number, open: number, l = AGENT_LIMITS) {
   return Math.floor(Math.max(l.minSizeSol, Math.min(l.maxSizeSol, spare / slots)) * 1000) / 1000;
 }
 /** Why he may not open this coin, or null. No answer on bundles means no buy. */
-export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; held: boolean; closedAgoMs: number | null; size: number; ageMs: number | null; callouts: number; top10HeldPct?: number | null }, l = AGENT_LIMITS) {
+export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; held: boolean; closedAgoMs: number | null; lastOpenAgoMs?: number | null; size: number; ageMs: number | null; callouts: number; top10HeldPct?: number | null }, l = AGENT_LIMITS) {
   if (o.held) return "already held";
   if (!o.size) return "no slot or no SOL";
   if (!o.capUsd || o.capUsd < l.minCapUsd) return "cap too small";
@@ -92,6 +92,7 @@ export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; he
   if (o.ageMs == null || o.ageMs < l.minAgeMs) return "too new";
   if (!o.callouts) return "no callouts"; // nobody has put their name on it yet
   if (o.closedAgoMs != null && o.closedAgoMs < l.reopenAfterMs) return "closed recently";
+  if (o.lastOpenAgoMs != null && o.lastOpenAgoMs < l.openGapMs) return "just opened one"; // 13 opens an hour each lost 0.017 on average and forced a sale to pay for it; he keeps opening, 5 an hour
   return null;
 }
 /** The range rule he already had. Each step stays over $1, because a callout needs that much of the coin held. */
