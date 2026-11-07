@@ -4,7 +4,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync }
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
-const BRIDGE = process.env.CHATGPT_BRIDGE ?? "C:/Code/chatgpt-bridge", POLL_MS = 1_000, MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const BRIDGE = process.env.CHATGPT_BRIDGE ?? "C:/Code/chatgpt-bridge", WINDOW_LOADS_MS = 8_000, POLL_MS = 1_000, MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const files = resolve(process.env.CONVERSATIONS_ROOT ?? resolve(homedir(), ".conversations"), "conversations");
 type Row = { type?: string; role?: string; text?: string; status?: string; conversation?: string; error?: string };
 
@@ -31,8 +31,9 @@ const recentChats = () => readdirSync(files).filter(f => /^[0-9a-f]{8}-.*\.jsonl
   .map(({ f }) => ({ name: f.replace(/\.jsonl$/, ""), rows: rows(resolve(files, f)) }));
 
 export async function askChat(prompt: string, timeoutMs = 120_000, image?: string) {
-  const file = (await bridge("new", "--hidden")).split("\n").pop()!, id = file.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, ""), askFile = resolve(import.meta.dir, "..", ".range-bots", "chat", `${id}.txt`), end = Date.now() + timeoutMs;
+  const file = (await bridge("new")).split("\n").pop()!, id = file.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, ""), askFile = resolve(import.meta.dir, "..", ".range-bots", "chat", `${id}.txt`), end = Date.now() + timeoutMs;
   try {
+    await Bun.sleep(WINDOW_LOADS_MS);
     mkdirSync(dirname(askFile), { recursive: true }); writeFileSync(askFile, prompt);
     const fits = !!image && statSync(image).size <= MAX_IMAGE_BYTES;
     await bridge("send", id, askFile, ...(fits ? [image!] : []));
