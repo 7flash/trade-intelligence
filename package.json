@@ -1,0 +1,18 @@
+{
+  "name": "trade-intelligence",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "agent": "bun run src/agent.ts",
+    "browser": "bun run src/browser.ts",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@browserbasehq/sdk": "^2.25.0",
+    "jsx-ai": "^0.21.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.8.3"
+  }
+}
