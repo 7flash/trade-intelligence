@@ -227,7 +227,7 @@ async function watchSites() {
 async function dropStuck() {
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string; symbol?: string | null; costSol?: number | null; valueSol?: number | null; amountRaw?: string | null; last?: string | null }[] };
   const own = readOwn(), now = Date.now();
-  for (const b of s.bots.filter(x => x.wallet === s.agentWallet && neverBought(x, own[x.mint], now))) {
+  for (const b of s.bots.filter(x => x.wallet === s.agentWallet && !cantBuy().includes(x.mint) && neverBought(x, own[x.mint], now))) {
     const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "remove", wallet: b.wallet, mint: b.mint }) });
     console.log(`${new Date().toISOString()} dropped ${b.symbol}: never bought, ${r.ok ? "slot freed" : `remove failed ${r.status}`}`);
     if (r.ok) writeFileSync(cantBuyPath, JSON.stringify([...new Set([...cantBuy(), b.mint])]));
