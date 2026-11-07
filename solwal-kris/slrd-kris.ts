@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import { chatStream } from "./tui/chat-window.ts";
 import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
-import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
+import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
 import { coinWebsite, exaFacts, isProjectSite, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
 import { takeSiteShot } from "./tui/site-shot.ts";
@@ -248,6 +248,22 @@ async function watchSites() {
   } catch (e) { console.log(`${new Date().toISOString()} watch: ${String(e).slice(0, 100)}`); } finally { watching = false; }
 }
 /** Positions he opened that never managed one buy give their slot back. "remove" sells nothing, and there is nothing to sell. */
+/** A coin with no volume and no trade of ours for two hours is sold, whatever the cash: no range can make it trade. */
+async function closeDead() {
+  const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string; symbol?: string | null; valueSol?: number | null }[] };
+  const mine = s.bots.filter(b => b.wallet === s.agentWallet && (b.valueSol ?? 0) > 0 && !ownCoins().includes(b.mint)), vol = new Map<string, number>(), now = Date.now();
+  for (let i = 0; i < mine.length; i += 30) {
+    const pairs = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${mine.slice(i, i + 30).map(b => b.mint).join(",")}`, { signal: AbortSignal.timeout(8_000) }).then(r => r.json() as Promise<{ baseToken?: { address?: string }; volume?: { h1?: number } }[]>);
+    for (const p of pairs) { const k = p.baseToken?.address; if (k) vol.set(k, (vol.get(k) ?? 0) + (p.volume?.h1 ?? 0)); }
+  }
+  for (const b of mine) {
+    let lastTrade: number | null = null; try { lastTrade = JSON.parse(readFileSync(resolve(dot, `target-${b.wallet}-${b.mint}.json`), "utf8")).lastTradeAtMs ?? null; } catch {}
+    if (!deadCoin(vol.get(b.mint) ?? null, lastTrade, now)) continue;
+    const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "stop", wallet: b.wallet, mint: b.mint }) });
+    console.log(`${new Date().toISOString()} dead coin ${b.symbol}: $${Math.round(vol.get(b.mint) ?? 0)} hour volume, ${r.ok ? "sell-all sent" : `failed ${r.status}`}`);
+    if (r.ok) writeFileSync(closedLowPath, JSON.stringify([...new Set([...closedLow(), b.mint])]));
+  }
+}
 async function dropStuck() {
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string; symbol?: string | null; costSol?: number | null; valueSol?: number | null; amountRaw?: string | null; last?: string | null }[] };
   const own = readOwn(), now = Date.now();
@@ -275,7 +291,7 @@ async function closeForCash() {
   console.log(`${new Date().toISOString()} cash ${cash.toFixed(3)}: closing ${b.symbol}, $${Math.round(b.hourVolumeUsd!)} hour volume, ${r.ok ? "sell-all sent" : `stop failed ${r.status}`}`);
   if (r.ok) { lastClose = Date.now(); writeFileSync(closedLowPath, JSON.stringify([...closed, b.mint])); }
 }
-if (!process.argv[2]) { setInterval(() => void watchSites(), 300_000); setInterval(() => void closeForCash().catch(e => console.log(`closeForCash: ${String(e).slice(0, 100)}`)), 60_000); setInterval(() => void dropStuck().catch(e => console.log(`dropStuck: ${String(e).slice(0, 100)}`)), 60_000); }
+if (!process.argv[2]) { setInterval(() => void watchSites(), 300_000); setInterval(() => void closeForCash().catch(e => console.log(`closeForCash: ${String(e).slice(0, 100)}`)), 60_000); setInterval(() => void closeDead().catch(e => console.log(`closeDead: ${String(e).slice(0, 100)}`)), 300_000); setInterval(() => void dropStuck().catch(e => console.log(`dropStuck: ${String(e).slice(0, 100)}`)), 60_000); }
 /** A site Exa could read gets its picture on the callout; anything else goes out as words only. */
 async function shotOf(mint: string) {
   const site = known.get(mint)?.site; if (!site) return undefined;

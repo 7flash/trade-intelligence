@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { rangeLevels, targetPlan } from "../packages/core/src/runtime/target-inventory.ts";
-import { agentPlan, agentSize, backedByReads, splitCallout, verdictOf, zeroCount, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, backedByReads, deadCoin, splitCallout, verdictOf, zeroCount, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -162,4 +162,11 @@ test("a reply that opens gives his read, the verdict and a separate post", () =>
   expect(splitCallout("Nothing here.\nPASS").callout).toBeNull();
   expect(splitCallout("Fine.\nOPEN\nCALLOUT: SKIP").callout).toBeNull();
   expect(splitCallout("Fine.\nOPEN\n**CALLOUT:** the post").callout).toBe("the post");
+});
+test("only a coin nobody trades and we have not traded for two hours is dead", () => {
+  const now = 10_000_000;
+  expect(deadCoin(50, now - 7_300_000, now)).toBe(true);
+  expect(deadCoin(150, now - 7_300_000, now)).toBe(false);
+  expect(deadCoin(50, now - 3_600_000, now)).toBe(false);
+  expect(deadCoin(null, now - 7_300_000, now)).toBe(false); // no reading is not no volume
 });
