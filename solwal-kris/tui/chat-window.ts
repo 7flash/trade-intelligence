@@ -1,10 +1,10 @@
 /** One question to ChatGPT in its own small window, through the conversation files of chatgpt-bridge. The window is closed
  * after the reply. A browser window cannot read this machine's files, unlike the Codex runtime. */
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
-const BRIDGE = process.env.CHATGPT_BRIDGE ?? "C:/Code/chatgpt-bridge", WINDOW_LOADS_MS = 8_000, POLL_MS = 1_000;
+const BRIDGE = process.env.CHATGPT_BRIDGE ?? "C:/Code/chatgpt-bridge", WINDOW_LOADS_MS = 8_000, POLL_MS = 1_000, MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const files = resolve(process.env.CONVERSATIONS_ROOT ?? resolve(homedir(), ".conversations"), "conversations");
 type Row = { type?: string; role?: string; text?: string; status?: string; conversation?: string; error?: string };
 
@@ -22,12 +22,21 @@ export function boundChat(list: Row[]) {
 }
 export const lastReply = (list: Row[]) => list.findLast(r => r.type === "message" && r.role === "assistant")?.text ?? null;
 
-export async function askChat(prompt: string, timeoutMs = 120_000) {
+/** The chat a prompt landed in, for closing its window when the send was never confirmed. Long messages show only their start. */
+export function chatOfPrompt(prompt: string, list: { name: string; rows: Row[] }[]) {
+  const sent = prompt.trim(), shown = (r: Row) => (r.text ?? "").replace(/\s*\u2026\n[^\n]*$/, "").trim();
+  return list.find(c => c.rows.some(r => r.type === "message" && r.role === "user" && shown(r).length >= 200 && sent.startsWith(shown(r))))?.name ?? null;
+}
+const recentChats = () => readdirSync(files).filter(f => /^[0-9a-f]{8}-.*\.jsonl$/.test(f)).map(f => ({ f, at: statSync(resolve(files, f)).mtimeMs })).sort((a, b) => b.at - a.at).slice(0, 8)
+  .map(({ f }) => ({ name: f.replace(/\.jsonl$/, ""), rows: rows(resolve(files, f)) }));
+
+export async function askChat(prompt: string, timeoutMs = 120_000, image?: string) {
   const file = (await bridge("new")).split("\n").pop()!, id = file.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, ""), askFile = resolve(import.meta.dir, "..", ".range-bots", "chat", `${id}.txt`), end = Date.now() + timeoutMs;
   try {
     await Bun.sleep(WINDOW_LOADS_MS);
     mkdirSync(dirname(askFile), { recursive: true }); writeFileSync(askFile, prompt);
-    await bridge("send", id, askFile);
+    const fits = !!image && statSync(image).size <= MAX_IMAGE_BYTES;
+    await bridge("send", id, askFile, ...(fits ? [image!] : []));
     while (Date.now() < end) {
       const chat = boundChat(rows(file)), reply = chat ? lastReply(rows(resolve(files, `${chat}.jsonl`))) : null;
       if (reply) return reply;
@@ -36,10 +45,11 @@ export async function askChat(prompt: string, timeoutMs = 120_000) {
     throw new Error("no reply in time");
   } finally {
     rmSync(askFile, { force: true });
-    await bridge("close", id).catch(() => {});
+    await bridge("close", id).catch(async () => { const chat = chatOfPrompt(prompt, recentChats()); if (chat) await bridge("close", chat).catch(() => {}); });
   }
 }
 /** The same shape as jsx-ai's streamLLM: the whole reply arrives as one chunk. */
-export async function* chatStream(messages: { role: string; content: string }[], o: { timeoutMs: number }) {
-  yield await askChat(messages.map(m => m.content).join("\n\n"), Math.max(o.timeoutMs, 120_000));
+export async function* chatStream(messages: { role: string; content: string }[], o: { timeoutMs: number; image?: string }) {
+  const said = messages.map(m => m.content).join("\n\n");
+  yield await askChat(o.image ? `${said}\n\nThe attached picture is this coin's own website.` : said, Math.max(o.timeoutMs, 120_000), o.image);
 }

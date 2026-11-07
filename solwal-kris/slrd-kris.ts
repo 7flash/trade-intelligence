@@ -11,7 +11,7 @@ import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
 import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, flatCallout, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
-import { coinWebsite, exaFacts, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
+import { coinWebsite, exaFacts, isProjectSite, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
 import { takeSiteShot } from "./tui/site-shot.ts";
 import { startOutcome, stepOutcome, type Outcome } from "./tui/kris-outcomes.ts";
 import { freshMigration, goodHolders, planSlots, slotPlan, slotKeepsRange, slotSize, slotQualifies, SLOT_CONFIG, type Slot, type SlotCoin, type SlotKind } from "./tui/kris-slots.ts";
@@ -79,6 +79,14 @@ function think(ev: KrisEvent, facts: Record<string, unknown>) {
   if (minor ? thinking || waiting.length > 0 : waiting.length >= 4) return;
   waiting.push({ ev, facts }); void drainThoughts();
 }
+/** A picture of the coin's own site, for the reader of this coin. Coins with no site of their own have none. */
+async function siteShotFor(mint: string) {
+  const site = known.get(mint)?.site;
+  if (!isProjectSite(site)) return undefined;
+  const out = await takeSiteShot(site, resolve(dot, "shots", `${mint}.png`)).catch(() => null);
+  console.log(`${new Date().toISOString()} site shot ${mint.slice(0, 6)}: ${out ? "attached" : "none"}`);
+  return out ?? undefined;
+}
 async function drainThoughts() {
   if (thinking) return; thinking = true;
   for (let job = waiting.shift(); job; job = waiting.shift()) {
@@ -87,10 +95,11 @@ async function drainThoughts() {
       const opened = job.ev.kind === "position", live = job.ev.kind === "trade" || job.ev.kind === "range";
       const context = live || job.ev.kind === "coin" || job.ev.kind === "migrated" || job.ev.kind === "browse" ? null : await coinContext(job.ev.mint);
       if (job.ev.kind === "browse" && job.facts.canOpen === false) { job.ev.thought = `${job.ev.symbol}: ${job.facts.whyNot}`; save(); } // he cannot buy it: no model, no window
+      else if (job.ev.kind === "trade") { job.ev.thought = job.ev.title; save(); } // the range traded: nothing to think about
       else for (let attempt = 1; attempt <= 2; attempt++) try { // the Codex runtime sometimes exits mid-turn: one more try
         let text = "";
         const browsing = job.ev.kind === "browse";
-        for await (const chunk of streamLLM([{ role: "system", content: browsing ? BROWSE_SYSTEM : opened ? POSITION_SYSTEM : live ? LIVE_SYSTEM : SYSTEM }, { role: "user", content: JSON.stringify(browsing || live ? { ...job.facts, earlierThoughts: earlier } : opened ? { ...job.facts, context, earlierThoughts: earlier } : { ...job.facts, context, myRecentResults: results, oddsForCoinsLikeThese: newPairOdds(), earlierThoughts: earlier }) }], { timeoutMs: 60_000 })) {
+        for await (const chunk of streamLLM([{ role: "system", content: browsing ? BROWSE_SYSTEM : opened ? POSITION_SYSTEM : live ? LIVE_SYSTEM : SYSTEM }, { role: "user", content: JSON.stringify(browsing || live ? { ...job.facts, earlierThoughts: earlier } : opened ? { ...job.facts, context, earlierThoughts: earlier } : { ...job.facts, context, myRecentResults: results, oddsForCoinsLikeThese: newPairOdds(), earlierThoughts: earlier }) }], { timeoutMs: 60_000, image: browsing ? await siteShotFor(job.ev.mint) : undefined })) {
           text += chunk; job.ev.thought = browsing ? withoutVerdict(text.replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "")) : text; save();
         }
         if (browsing) console.log(`${new Date().toISOString()} verdict ${job.ev.symbol}: ${verdictOf(text) ? "OPEN" : "PASS"}, canOpen ${job.facts.canOpen}`);

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { boundChat, lastReply } from "./chat-window.ts";
+import { boundChat, chatOfPrompt, lastReply } from "./chat-window.ts";
 
 test("a new window's chat is known once its prompt is accepted", () => {
   expect(boundChat([{ type: "receipt", status: "queued" }])).toBeNull();
@@ -11,4 +11,9 @@ test("a prompt that may or may not have gone through is not retried", () => {
 test("only the assistant's message is the reply", () => {
   expect(lastReply([{ type: "message", role: "user", text: "hi" }])).toBeNull();
   expect(lastReply([{ type: "message", role: "user", text: "hi" }, { type: "message", role: "assistant", text: "first" }, { type: "message", role: "assistant", text: "second" }])).toBe("second");
+});
+test("a window whose send was not confirmed can still be found and closed", () => {
+  const prompt = "x".repeat(500), list = [{ name: "a", rows: [{ type: "message", role: "user", text: "other" }] }, { name: "b", rows: [{ type: "message", role: "user", text: "x".repeat(300) + "\n\n\u2026\nShow more" }] }];
+  expect(chatOfPrompt(prompt, list)).toBe("b");
+  expect(chatOfPrompt("nothing like it", list)).toBeNull();
 });
