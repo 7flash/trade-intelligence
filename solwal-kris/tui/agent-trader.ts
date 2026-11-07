@@ -104,8 +104,9 @@ export function agentPlan(capUsd: number, size: number, l = AGENT_LIMITS) {
 export const calloutText = (s: string) => s.replace(/https?:\/\/\S+/g, "").replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "").replace(/\s+/g, " ").trim().slice(0, 280);
 /** A callout has to be about this coin: it says the name, in plain letters. */
 export const namesCoin = (text: string, symbol: string | null) => { const name = (symbol ?? "").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase(); return name.length > 0 && text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").includes(name); };
-/** The goal a callout may name, from the coin's own range and never from the model: a range of about 3x reads as 5x from here. */
-export const goalX = (range?: { buy: number; sell: number } | null) => Math.max(2, Math.min(10, Math.round((range ? range.sell / range.buy : 19 / 6) * 5 / 3)));
+/** Every automatic range has the same width, so the goal comes from what the coin is worth: small coins have more room. Most callouts name none. */
+export const goalX = (capUsd?: number | null) => capUsd == null ? null : capUsd < 20_000 ? 5 : capUsd < 100_000 ? 4 : capUsd < 500_000 ? 3 : 2;
+export const useGoal = (at = Math.random()) => at < 0.4;
 /** Different moments call for different lines. The first is only for a site with live numbers; the rest take turns. */
 export const CALLOUT_SHAPES = {
   number: "Lead with one live number from siteNow and what it tells you, in plain words.",
@@ -125,7 +126,7 @@ export function pickShape(hasLiveNumbers: boolean, recent: CalloutShape[], at = 
 }
 export const goalLine = (goal: number, at = Math.random()) => [`easy ${goal}x from here.`, `${goal}x from here is not a stretch.`, `${goal}x from here feels fair.`, `i'm here for the ${goal}x.`][Math.floor(at * 4)]!;
 /** Words that turn a callout back into a report, or put holders where a project should be. */
-export const flatCallout = (text: string) => /\b(callers?|holders?|ownership|launch stays|appears? to|seems?|might|potentially|i bought|solana (meme|token))\b|my bet is,/i.test(text);
+export const flatCallout = (text: string) => /\b(callers?|holders?|ownership|launch stays|appears? to|seems?|might|potentially|i bought|same-ticker|copycat|isn't|solana (meme|token))\b|my bet is,/i.test(text);
 /** The model ends an analysis with OPEN or PASS on its own line. */
 export const verdictOf = (text: string) => /(^|\n)\s*OPEN\s*$/.test(text);
 export const withoutVerdict = (text: string) => text.replace(/\s*\n?\s*(OPEN|OPE|OP|PASS|PAS|PA)\s*$/, "").trimEnd();

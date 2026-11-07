@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { rangeLevels, targetPlan } from "../packages/core/src/runtime/target-inventory.ts";
-import { agentPlan, agentSize, flatCallout, goalLine, goalX, pickShape, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -107,11 +107,9 @@ test("the smallest position's first buy is enough to post a callout", () => { //
   expect(first?.side === "buy" ? first.amountSol : 0).toBeGreaterThan(0.028);
   expect(agentSize(0.16, 0)).toBe(0); // under that he waits rather than buy a bag he cannot call
 });
-test("the goal comes from the range and stays modest", () => {
-  expect(goalX({ buy: 60_000, sell: 190_000 })).toBe(5);
-  expect(goalX({ buy: 10_000, sell: 20_000 })).toBe(3);
-  expect(goalX({ buy: 1_000, sell: 100_000 })).toBe(10);
-  expect(goalX(null)).toBe(5);
+test("the goal follows the size of the coin, and most callouts name none", () => {
+  expect([goalX(8_000), goalX(60_000), goalX(300_000), goalX(2_000_000), goalX(null)]).toEqual([5, 4, 3, 2, null]);
+  expect(useGoal(0.1)).toBe(true); expect(useGoal(0.9)).toBe(false);
 });
 test("a callout about holders or full of hedges is refused", () => {
   expect(flatCallout("sticky is a solana meme token and callers say it is doing better")).toBe(true);
@@ -126,3 +124,4 @@ test("callouts do not keep one shape", () => {
   expect(goalLine(5, 0)).toBe("easy 5x from here.");
   expect(goalLine(5, 0.99)).toContain("5x");
 });
+test("a callout that talks the coin down is refused", () => expect(flatCallout("chat talks fees, but pokehood has 10 same-ticker contracts and isn't the top one")).toBe(true));
