@@ -17,3 +17,8 @@ test("a window whose send was not confirmed can still be found and closed", () =
   expect(chatOfPrompt(prompt, list)).toBe("b");
   expect(chatOfPrompt("nothing like it", list)).toBeNull();
 });
+test("a prompt is found even when the page dropped its punctuation", () => {
+  const prompt = `${"words ".repeat(50)}"list":["one (holds $5)","two"]`;
+  const shown = `${"words ".repeat(50)}"list":"one (holds $5)\n\n\u2026\nShow more`;
+  expect(chatOfPrompt(prompt, [{ name: "c", rows: [{ type: "message", role: "user", text: shown }] }])).toBe("c");
+});
