@@ -154,7 +154,7 @@ async function analyse(ev: KrisEvent, b: { stop: string; asked?: boolean; coin: 
   if (b.callouts) { const { whatCallersSay: _, ...numbers } = b.callouts as Record<string, unknown>; callerNumbers.set(b.mint, numbers); }
   calloutCount.set(b.mint, (b.callouts as { posts?: number } | null | undefined)?.posts ?? 0); heldTop.set(b.mint, b.top10HeldPct ?? null); if (b.page) pageRead.set(b.mint, b.page);
   const w = await weigh(b.mint).catch(() => null);
-  if (b.asked) { pendingRead.set(b.mint, Date.now()); if (!called.has(b.mint)) wantCallout.add(b.mint); }
+  if (b.asked) pendingRead.set(b.mint, Date.now()); // the callout itself follows the first buy
   if (w?.refused === null || b.asked) await learnCoin(b.mint, b.coin);
   console.log(`${new Date().toISOString()} weighed ${b.coin}: ${w ? w.refused ?? "clear" : "failed"}, cap ${Math.round(w?.capUsd ?? 0)}, early ${w?.risk?.earlyBoughtPct}, dev ${w?.risk?.devFunded}, top10 ${b.top10HeldPct}, posts ${calloutCount.get(b.mint)}, size ${w?.size}`);
   think(ev, { looking: b.asked ? "a coin you just took a position in" : b.stop === "callout" ? "a coin someone called out, with their position and profit" : b.stop === "screener" ? "a live coin you spotted moving, before most people" : b.stop === "movers" ? "one of the coins moving hardest on pump.fun right now" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, callouts: b.callouts ?? undefined, ...(w?.risk ?? {}), top10HeldPct: b.top10HeldPct ?? undefined, knownAboutCoin: known.get(b.mint) ?? undefined, canOpen: b.asked || w?.refused === null, whyNot: b.asked ? undefined : w?.refused ?? undefined });
@@ -306,8 +306,8 @@ function sendCallouts() {
     if (Date.now() - (pendingRead.get(mint) ?? 0) < 180_000) continue; // his read of it is on the way
     const read = events.find(e => e.mint === mint && e.kind === "browse" && (e.thought?.length ?? 0) >= 80) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
     if (!read?.thought) continue;
-    wantCallout.delete(mint); called.add(mint); writeFileSync(calledPath, JSON.stringify([...called]));
-    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(async text => { if (text) { const ev = add({ atMs: Date.now(), kind: "callout" as KrisEvent["kind"], mint, symbol: read.symbol, title: "Callout", thought: text }); if (ev) save(); writeCallout(import.meta.dir, { mint, text, image: await shotOf(mint) }); } else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
+    wantCallout.delete(mint);
+    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(async text => { called.add(mint); writeFileSync(calledPath, JSON.stringify([...called])); if (text) { const ev = add({ atMs: Date.now(), kind: "callout" as KrisEvent["kind"], mint, symbol: read.symbol, title: "Callout", thought: text }); if (ev) save(); writeCallout(import.meta.dir, { mint, text, image: await shotOf(mint) }); } else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
   }
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */
