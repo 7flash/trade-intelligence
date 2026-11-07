@@ -60,5 +60,7 @@ async function askWithPicture(prompt: string, timeoutMs: number, image?: string)
 /** The same shape as jsx-ai's streamLLM: the whole reply arrives as one chunk. */
 export async function* chatStream(messages: { role: string; content: string }[], o: { timeoutMs: number; image?: string }) {
   const said = messages.map(m => m.content).join("\n\n");
-  yield await askWithPicture(o.image ? `${said}\n\nThe attached picture is this coin's own website.` : said, Math.max(o.timeoutMs, 120_000), o.image);
+  // A background tab does not finish an upload and it blocks every thought behind it, so the picture stays out until that works.
+  const attach = process.env.CHAT_PICTURES === "1";
+  yield await askWithPicture(attach && o.image ? `${said}\n\nThe attached picture is this coin's own website.` : said, Math.max(o.timeoutMs, 120_000), attach ? o.image : undefined);
 }
