@@ -104,6 +104,28 @@ export function agentPlan(capUsd: number, size: number, l = AGENT_LIMITS) {
 export const calloutText = (s: string) => s.replace(/https?:\/\/\S+/g, "").replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "").replace(/\s+/g, " ").trim().slice(0, 280);
 /** A callout has to be about this coin: it says the name, in plain letters. */
 export const namesCoin = (text: string, symbol: string | null) => { const name = (symbol ?? "").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase(); return name.length > 0 && text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").includes(name); };
+/** The goal a callout may name, from the coin's own range and never from the model: a range of about 3x reads as 5x from here. */
+export const goalX = (range?: { buy: number; sell: number } | null) => Math.max(2, Math.min(10, Math.round((range ? range.sell / range.buy : 19 / 6) * 5 / 3)));
+/** Different moments call for different lines. The first is only for a site with live numbers; the rest take turns. */
+export const CALLOUT_SHAPES = {
+  number: "Lead with one live number from siteNow and what it tells you, in plain words.",
+  observation: "Say what the coin does and what people here are doing with it, then the one thing your bet hangs on.",
+  question: "Ask the chat the one sharp question that decides this coin, then answer it yourself in a few words.",
+  contrast: "Set what the chat is talking about against what is actually there, in one or two short sentences.",
+  next: "Say the next concrete thing that has to happen for this coin and why you are here before it.",
+  punch: "One sentence, at most fourteen words, naming the single thing that makes this coin worth holding.",
+  joke: "A dry joke that also tells the reader what this coin really is.",
+} as const;
+export type CalloutShape = keyof typeof CALLOUT_SHAPES;
+export function pickShape(hasLiveNumbers: boolean, recent: CalloutShape[], at = Math.random()): CalloutShape {
+  const all = (Object.keys(CALLOUT_SHAPES) as CalloutShape[]).filter(s => s !== "number");
+  if (hasLiveNumbers && recent[recent.length - 1] !== "number") return "number";
+  const fresh = all.filter(s => !recent.slice(-3).includes(s));
+  return (fresh.length ? fresh : all)[Math.floor(at * (fresh.length ? fresh : all).length)]!;
+}
+export const goalLine = (goal: number, at = Math.random()) => [`easy ${goal}x from here.`, `${goal}x from here is not a stretch.`, `${goal}x from here feels fair.`, `i'm here for the ${goal}x.`][Math.floor(at * 4)]!;
+/** Words that turn a callout back into a report, or put holders where a project should be. */
+export const flatCallout = (text: string) => /\b(callers?|holders?|ownership|launch stays|appears? to|seems?|might|potentially|i bought|solana (meme|token))\b|my bet is,/i.test(text);
 /** The model ends an analysis with OPEN or PASS on its own line. */
 export const verdictOf = (text: string) => /(^|\n)\s*OPEN\s*$/.test(text);
 export const withoutVerdict = (text: string) => text.replace(/\s*\n?\s*(OPEN|OPE|OP|PASS|PAS|PA)\s*$/, "").trimEnd();
