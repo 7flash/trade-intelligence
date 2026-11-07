@@ -4,7 +4,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { pickCoin, pickScreener, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, calloutsScript, holdersScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
+import { pickCoin, pickScreener, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, headerLinksScript, calloutsScript, holdersScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
+import { isProjectSite } from "./tui/exa-facts.ts";
 import { execution, nextCallout, nextOrder, readOrder, writeCallout, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
 import { calloutSignals, pageFacts, splitCallouts, topHoldersPct, type Callout } from "./tui/agent-trader.ts";
 import { safeQuotes } from "./tui/callout-words.ts";
@@ -118,7 +119,7 @@ async function read(stop: TourStop) {
   writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: readNow, stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
-    callout: stop === "callout" ? safeFacts(posted, 10) : [], callouts, top10HeldPct: holders, page: coin ? pageFacts(seen.text, seen.path.slice(6)) : null }));
+    callout: stop === "callout" ? safeFacts(posted, 10) : [], callouts, top10HeldPct: holders, page: coin ? { ...pageFacts(seen.text, seen.path.slice(6)), site: await headerSite() } : null }));
 }
 /** A real mouse click, with Kris's cursor on the stream going there first. */
 async function realClick(at: { x: number; y: number }, box: Pick<TradeBox, "wide" | "high">, travel = 1_100) {
@@ -157,6 +158,9 @@ async function attachImage(path: string) {
   if (!done) return false;
   await sleep(3_500); // it uploads before the post button is ready
   return true;
+}
+async function headerSite() {
+  try { return (JSON.parse(await value(headerLinksScript) ?? "[]") as unknown[]).find(isProjectSite) ?? null; } catch { return null; }
 }
 async function postCallout(job: CalloutJob) {
   const url = coinPage(job.mint); if (url === HOME) return;

@@ -22,6 +22,9 @@ export async function exaFacts(mint: string, symbol: string | null, key: string,
   return j.results?.length ? coinFacts(j.output?.content) : null; // no page with this address: nothing is known
 }
 
+/** A project's own site, not a social page, an explorer or pump.fun itself. */
+export const isProjectSite = (url: unknown): url is string => typeof url === "string" && /^https?:\/\//.test(url) && !/\/\/([^/]*\.)?(pump\.fun|x\.com|twitter\.com|t\.me|telegram\.[a-z]+|discord\.[a-z]+|solscan\.io|dexscreener\.com|youtube\.com|tiktok\.com|instagram\.com)(\/|$|\?)/i.test(url);
+
 const GATEWAYS = ["https://gateway.pinata.cloud/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/"];
 /** The website the creator gave the coin, from its token metadata. It goes to Exa and nowhere else: this machine never opens it. */
 export async function coinWebsite(mint: string, rpcUrls: string[], get: typeof fetch = fetch) {
@@ -35,7 +38,7 @@ export async function coinWebsite(mint: string, rpcUrls: string[], get: typeof f
   const cid = /ipfs\/([A-Za-z0-9]+)/.exec(uri)?.[1];
   for (const u of cid ? GATEWAYS.map(g => g + cid) : [uri]) {
     const m = await get(u, { signal: AbortSignal.timeout(5_000) }).then(r => r.json() as Promise<{ website?: unknown }>).catch(() => null);
-    if (m) return typeof m.website === "string" && /^https?:\/\//.test(m.website) && !/pump\.fun|x\.com|twitter\.com|t\.me/.test(m.website) ? m.website : null;
+    if (m) return isProjectSite(m.website) ? m.website : null;
   }
   return null;
 }

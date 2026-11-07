@@ -102,7 +102,7 @@ async function drainThoughts() {
 const browsingPath = resolve(dot, "kris-browsing.json"), analysedPath = resolve(dot, "kris-analysed.json"); let browseSeen = 0;
 function thinkOnBrowsing() {
   if (thinking || waiting.length) return;
-  let b: { at: number; stop: string; mint: string; coin: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null; page?: { capUsd: number | null; ageMs: number | null } | null };
+  let b: { at: number; stop: string; mint: string; coin: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null; page?: { capUsd: number | null; ageMs: number | null; site?: string | null } | null };
   try { b = JSON.parse(readFileSync(browsingPath, "utf8")); } catch { return; }
   if (!b.mint || b.at === browseSeen || Date.now() - b.at > 45_000) return;
   browseSeen = b.at;
@@ -126,7 +126,7 @@ async function weigh(mint: string) {
   if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
   return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0, top10HeldPct: heldTop.get(mint) ?? null }) : "off" };
 }
-async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null; page?: { capUsd: number | null; ageMs: number | null } | null }) {
+async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null; page?: { capUsd: number | null; ageMs: number | null; site?: string | null } | null }) {
   const talk = (b.callouts as { whatCallersSay?: string[] } | null | undefined)?.whatCallersSay;
   if (talk?.length) callerTalk.set(b.mint, talk);
   if (b.callouts) { const { whatCallersSay: _, ...numbers } = b.callouts as Record<string, unknown>; callerNumbers.set(b.mint, numbers); }
@@ -143,7 +143,7 @@ async function learnCoin(mint: string, symbol: string) {
   const key = (() => { try { return readFileSync(resolve(dot, "exa-key"), "utf8").trim(); } catch { return ""; } })(); if (!key) return;
   const facts = await exaFacts(mint, symbol, key).catch(e => { console.log(`${new Date().toISOString()} exa ${symbol}: ${String(e).slice(0, 100)}`); return null; });
   const urls = (() => { try { return [...readFileSync(resolve(homedir(), ".solard", "rpc.json"), "utf8").matchAll(/https:\/\/[^"\s]*helius[^"\s]*/g)].map(m => m[0]); } catch { return []; } })();
-  const site = await coinWebsite(mint, urls).catch(() => null), live = site ? await siteNow(site, key).catch(e => { console.log(`${new Date().toISOString()} site ${symbol}: ${String(e).slice(0, 100)}`); return null; }) : null;
+  const site = pageRead.get(mint)?.site ?? await coinWebsite(mint, urls).catch(() => null), live = site ? await siteNow(site, key).catch(e => { console.log(`${new Date().toISOString()} site ${symbol}: ${String(e).slice(0, 100)}`); return null; }) : null;
   known.set(mint, facts || live ? { what: facts?.what ?? "", who: facts?.who ?? "", flags: facts?.flags ?? [], siteNow: live, site: live ? site : null } : null);
   console.log(`${new Date().toISOString()} exa ${symbol}: ${facts ? `${facts.what.slice(0, 90)} | flags ${facts.flags.length}` : "nothing known"} | site ${live ? live.slice(0, 90) : "none"}`);
 }
@@ -160,7 +160,7 @@ async function openOwn(mint: string) {
 /** One public callout per position, right after its first buy, from what he already wrote about it. */
 const calledPath = resolve(dot, "kris-called.json"), wantCallout = new Set<string>();
 let called = new Set<string>(); try { called = new Set(JSON.parse(readFileSync(calledPath, "utf8")) as string[]); } catch {}
-const callerTalk = new Map<string, string[]>(), callerNumbers = new Map<string, unknown>(), calloutCount = new Map<string, number>(), heldTop = new Map<string, number | null>(), pageRead = new Map<string, { capUsd: number | null; ageMs: number | null }>();
+const callerTalk = new Map<string, string[]>(), callerNumbers = new Map<string, unknown>(), calloutCount = new Map<string, number>(), heldTop = new Map<string, number | null>(), pageRead = new Map<string, { capUsd: number | null; ageMs: number | null; site?: string | null }>();
 /** The chart in words: where it sits against its high and low, and what the last minutes did. No history is fetched. */
 async function chartShape(mint: string) {
   const r = await fetch(`http://127.0.0.1:5176/api/coin?mint=${mint}&watch=0`, { headers: { cookie: `slrd_web=${token}` }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
