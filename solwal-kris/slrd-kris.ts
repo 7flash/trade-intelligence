@@ -279,7 +279,7 @@ let lastClose = 0;
 async function closeForCash() {
   if (Date.now() - lastClose < 60_000) return;
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; wallets?: { name: string; sol?: number | null }[]; bots: { wallet: string; mint: string; symbol?: string | null; valueSol?: number | null }[] };
-  const cash = s.wallets?.find(w => w.name === s.agentWallet)?.sol; if (cash == null || cash >= AGENT_LIMITS.reserveSol + AGENT_LIMITS.minSizeSol) return;
+  const cash = s.wallets?.find(w => w.name === s.agentWallet)?.sol; if (cash == null || cash >= 0.2) return; // well under the 0.5 he opens at: opening must never set off a forced sale
   const own = readOwn(), now = Date.now(), closed = closedLow();
   const coins = s.bots.filter(b => b.wallet === s.agentWallet && (b.valueSol ?? 0) > 0 && own[b.mint] != null && now - own[b.mint]! >= 1_800_000 && !closed.includes(b.mint) && !ownCoins().includes(b.mint)); if (!coins.length) return;
   const volume = new Map<string, number>();
