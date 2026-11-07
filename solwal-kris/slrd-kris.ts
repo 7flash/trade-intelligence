@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import { chatStream } from "./tui/chat-window.ts";
 import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
-import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, flatCallout, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
+import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, flatCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
 import { coinWebsite, exaFacts, isProjectSite, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
 import { takeSiteShot } from "./tui/site-shot.ts";
@@ -199,7 +199,7 @@ async function composeCallout(symbol: string | null, myRead: string, whatCallers
     let text = "";
     for await (const chunk of streamLLM([{ role: "system", content: CALLOUT_SYSTEM }, { role: "user", content: JSON.stringify({ coin: symbol, shape: CALLOUT_SHAPES[shape], goalX: goal ?? undefined, knownAboutCoin: mint ? known.get(mint) ?? undefined : undefined, myRead, whatCallersSay, callers, chart, ...(attempt > 1 ? { rejected: "that line did not name the coin, or used a banned word" } : {}) }) }], { timeoutMs: 60_000 })) text += chunk;
     if (/^\s*SKIP\s*$/.test(text)) return "";
-    if (namesCoin(text, symbol) && !flatCallout(text)) return calloutText(!goal || text.toLowerCase().includes(`${goal}x`) ? text : new RegExp(`(^|\\s)${goal} (from here|is the goal)`, "i").test(text) ? text.replace(new RegExp(`(^|\\s)${goal} (from here|is the goal)`, "i"), `$1${goal}x $2`) : `${text.trim().replace(/\.?$/, ".")} ${goalLine(goal)}`);
+    if (namesCoin(text, symbol) && !flatCallout(text) && !zeroCount(text)) return calloutText(!goal || text.toLowerCase().includes(`${goal}x`) ? text : new RegExp(`(^|\\s)${goal} (from here|is the goal)`, "i").test(text) ? text.replace(new RegExp(`(^|\\s)${goal} (from here|is the goal)`, "i"), `$1${goal}x $2`) : `${text.trim().replace(/\.?$/, ".")} ${goalLine(goal)}`);
   }
   return ""; // nothing about this coin is better left unsaid
 }
@@ -213,7 +213,7 @@ async function composeUpdate(symbol: string | null, before: string, now: string,
   let text = "";
   for await (const chunk of streamLLM([{ role: "system", content: UPDATE_SYSTEM }, { role: "user", content: JSON.stringify({ coin: symbol, before, now, minutesApart }) }], { timeoutMs: 60_000 })) text += chunk;
   const line = calloutText(text);
-  return /^\s*SKIP\s*$/.test(text) || flatCallout(line) || !backedByReads(line, before, now) ? "" : line;
+  return /^\s*SKIP\s*$/.test(text) || flatCallout(line) || zeroCount(line) || !backedByReads(line, before, now) ? "" : line;
 }
 let watching = false;
 async function watchSites() {

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { rangeLevels, targetPlan } from "../packages/core/src/runtime/target-inventory.ts";
-import { agentPlan, agentSize, backedByReads, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, backedByReads, zeroCount, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -146,4 +146,11 @@ test("low cash closes the coin with the least volume, and among equals the bigge
   expect(lowestVolume([live, small, dead, unknown])).toBe(dead);
   expect(lowestVolume([live, unknown])).toBe(live);
   expect(lowestVolume([unknown])).toBe(null); // unknown volume is not low volume
+});
+test("a count of nothing is not said: the counter may not have loaded", () => {
+  expect(zeroCount("0 withdrawals worldwide on glitch so far")).toBe(true);
+  expect(zeroCount("zero burns yet")).toBe(true);
+  expect(zeroCount("0% tax and 10 jobs filled")).toBe(false);
+  expect(zeroCount("went from 50 holders to 120")).toBe(false);
+  expect(zeroCount("paid out 0.05 sol per task")).toBe(false);
 });
