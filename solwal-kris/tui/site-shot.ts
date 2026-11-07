@@ -8,16 +8,16 @@ const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 /** A blank or error page compresses to almost nothing; a real site does not. */
 export const MIN_SHOT_BYTES = 20_000;
 
-export const shotArgs = (url: string, out: string, profile: string) => ["--headless=new", "--disable-gpu", "--disable-extensions", "--disable-sync", "--no-first-run", "--hide-scrollbars",
-  `--user-data-dir=${profile}`, "--window-size=1200,1300", "--virtual-time-budget=8000", `--screenshot=${out}`, url];
+export const shotArgs = (url: string, out: string, profile: string, height = 1300) => ["--headless=new", "--disable-gpu", "--disable-extensions", "--disable-sync", "--no-first-run", "--hide-scrollbars",
+  `--user-data-dir=${profile}`, `--window-size=1200,${height}`, "--virtual-time-budget=8000", `--screenshot=${out}`, url];
 
-export async function takeSiteShot(url: string, out: string, timeoutMs = 25_000) {
+export async function takeSiteShot(url: string, out: string, timeoutMs = 25_000, height = 1300) {
   if (!/^https?:\/\//.test(url)) return null;
   mkdirSync(dirname(out), { recursive: true });
   rmSync(out, { force: true });
   const profile = mkdtempSync(join(tmpdir(), "site-shot-"));
   try {
-    const p = Bun.spawn([EDGE, ...shotArgs(url, out, profile)], { stdout: "ignore", stderr: "ignore" });
+    const p = Bun.spawn([EDGE, ...shotArgs(url, out, profile, height)], { stdout: "ignore", stderr: "ignore" });
     const timer = setTimeout(() => p.kill(), timeoutMs);
     await p.exited; clearTimeout(timer);
     return (statSync(out, { throwIfNoEntry: false })?.size ?? 0) >= MIN_SHOT_BYTES ? out : null;

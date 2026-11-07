@@ -83,7 +83,7 @@ function think(ev: KrisEvent, facts: Record<string, unknown>) {
 async function siteShotFor(mint: string) {
   const site = known.get(mint)?.site;
   if (!isProjectSite(site)) return undefined;
-  const out = await takeSiteShot(site, resolve(dot, "shots", `${mint}.png`)).catch(() => null);
+  const out = await takeSiteShot(site, resolve(dot, "shots", `${mint}-read.png`), 25_000, 5_000).catch(() => null); // tall: counters sit far down the page
   console.log(`${new Date().toISOString()} site shot ${mint.slice(0, 6)}: ${out ? "attached" : "none"}`);
   return out ?? undefined;
 }
