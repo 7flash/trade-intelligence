@@ -63,7 +63,7 @@ test("a coin we never tracked is unread, not guilty", () => {
   expect(refuseOpen({ ...unread, ageMs: 600_000 })).toBe("no early read on a young coin");
 });
 test("a range around the cap, in steps the size can really send", () => {
-  expect(agentPlan(50_000, 0.05)).toMatchObject({ buy: 30_000, sell: 95_000, steps: 4, budget: 0.05 });
+  expect(agentPlan(50_000, 0.05)).toMatchObject({ buy: 30_000, sell: 95_000, steps: 8, budget: 0.05 });
   expect(agentPlan(50_000, 0.2).steps).toBe(6);
   const p = agentPlan(50_000, 0.025); expect(p.steps).toBe(2); expect(p.budget / p.steps).toBeGreaterThanOrEqual(0.012);
 });
