@@ -274,11 +274,11 @@ async function dropStuck() {
   }
 }
 /** Cash too low to open a position: sell out of the lowest-volume coin he opened, one at a time so the cash can arrive. */
-let lastClose = 0;
+let lastClose = 0; const CASH_READY_SOL = 0.5;
 async function closeForCash() {
   if (Date.now() - lastClose < 60_000) return;
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; wallets?: { name: string; sol?: number | null }[]; bots: { wallet: string; mint: string; symbol?: string | null; valueSol?: number | null }[] };
-  const cash = s.wallets?.find(w => w.name === s.agentWallet)?.sol; if (cash == null || cash >= AGENT_LIMITS.reserveSol + AGENT_LIMITS.minSizeSol) return; // he never stops opening: when cash cannot fund the next one, the quietest coin does
+  const cash = s.wallets?.find(w => w.name === s.agentWallet)?.sol; if (cash == null || cash >= CASH_READY_SOL) return; // he never stops opening: the quietest coin is sold ahead of time, so the next open never waits for a sale
   const own = readOwn(), now = Date.now(), closed = closedLow();
   const coins = s.bots.filter(b => b.wallet === s.agentWallet && (b.valueSol ?? 0) > 0 && own[b.mint] != null && now - own[b.mint]! >= 1_800_000 && !closed.includes(b.mint) && !ownCoins().includes(b.mint)); if (!coins.length) return;
   const volume = new Map<string, number>();
