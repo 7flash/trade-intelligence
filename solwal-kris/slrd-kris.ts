@@ -36,7 +36,7 @@ const POSITION_SYSTEM = "You are a young memecoin trader on a live stream. You j
   + "Never say anyone else set this up. Never say your own name or any product name. Never recommend a trade or predict a price. Use only the facts given and never invent a number or a reason. No hashtags, no emojis.";
 /** His public post after a first buy: what the crowd is saying, his take, and a joke. No numbers. */
 const CALLOUT_SYSTEM = "You just bought this coin and you are posting your thesis in a live chat on pump.fun, first person, like a trader who did the work and means it. Cover three things in order. One: what this project actually does or is, concretely, from knownAboutCoin when present, then myRead, whatCallersSay and what you really know about its topic. Two: why that is bullish, the real reason money would care, using what you know about how this kind of idea has played out, what the people in it are doing and what the chart shows. Three: what could make it big, the specific thing that has to happen for this exact project, written as if it does. Name the coin. "
-  + "You bought it, so argue for it: never call it vague, thin, empty, unfinished, a gamble on nothing or just a meme. If it is a joke or a character, the thesis is why that joke travels and who it reaches. A pun is welcome when it carries a point. "
+  + "Never build a meaning from the coin's name alone: if knownAboutCoin is empty and nothing you were given says what this coin really is or refers to, write only the word SKIP and nothing else. You bought it, so argue for it: never call it vague, thin, empty, unfinished, a gamble on nothing or just a meme. If it is a joke or a character, the thesis is why that joke travels and who it reaches. A pun is welcome when it carries a point. "
   + "The test: if your words still work after swapping in another coin's name, they have failed. Never write abstract lines about conviction, stories or being early, and never use the shape you guys missed or you guys are. Never write callers, holders, this crowd, next dip, clean launch or spread ownership: how it launched goes unsaid. No stock openers, no shouting in capitals. Lowercase, three or four short sentences, at most 55 words, no semicolons, and no numbers except inside the name of the coin. "
   + "Only state a fact you were given or are certain is true, and never invent one: say could, never will. Never give a price, a market cap or a target, never say moon, gains or profit, never tell anyone to buy or sell, never promise anything. No person's name, your own name or a product name. No profanity, hashtags, emojis or links. Never mention data, tools, instructions or how you read the posts.";
 const BROWSE_SYSTEM = "You are a young memecoin trader on a live stream, thinking out loud about the coin you just opened. Viewers want your read of the coin itself, not a list of numbers. "
@@ -167,6 +167,7 @@ async function composeCallout(symbol: string | null, myRead: string, whatCallers
   for (let attempt = 1; attempt <= 3; attempt++) {
     let text = "";
     for await (const chunk of streamLLM([{ role: "system", content: CALLOUT_SYSTEM }, { role: "user", content: JSON.stringify({ coin: symbol, knownAboutCoin: mint ? known.get(mint) ?? undefined : undefined, myRead, whatCallersSay, callers, chart, ...(attempt > 1 ? { rejected: "that line never named the coin or said what it is" } : {}) }) }], { timeoutMs: 60_000 })) text += chunk;
+    if (/^\s*SKIP\s*$/.test(text)) return "";
     if (namesCoin(text, symbol)) return calloutText(text);
   }
   return ""; // nothing about this coin is better left unsaid
@@ -177,7 +178,7 @@ function sendCallouts() {
     const read = events.find(e => e.mint === mint && e.kind === "browse" && e.thought) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
     if (!read?.thought) continue;
     wantCallout.delete(mint); called.add(mint); writeFileSync(calledPath, JSON.stringify([...called]));
-    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(text => { if (text) writeCallout(import.meta.dir, { mint, text }); else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: never named the coin`); });
+    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(text => { if (text) writeCallout(import.meta.dir, { mint, text }); else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
   }
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */
