@@ -284,7 +284,7 @@ function sendCallouts() {
     const read = events.find(e => e.mint === mint && e.kind === "browse" && e.thought) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
     if (!read?.thought) continue;
     wantCallout.delete(mint); called.add(mint); writeFileSync(calledPath, JSON.stringify([...called]));
-    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(async text => { if (text) writeCallout(import.meta.dir, { mint, text, image: await shotOf(mint) }); else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
+    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(async text => { if (text) { const ev = add({ atMs: Date.now(), kind: "callout" as KrisEvent["kind"], mint, symbol: read.symbol, title: "Callout", thought: text }); if (ev) save(); writeCallout(import.meta.dir, { mint, text, image: await shotOf(mint) }); } else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
   }
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */

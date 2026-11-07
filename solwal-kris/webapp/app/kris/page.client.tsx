@@ -128,7 +128,7 @@ function Bubble() {
   const r = acting ? REACTIONS[acting] : null;
   return <div><div className={`act ${r ? r.tone : "off"}`}>{r?.label ?? "Watching"}</div><div className="bubble-head"><b>{b.coin}</b> {b.title}</div><div className="thought">{b.thought ?? (b.thinking ? "Thinking…" : "")}</div></div>;
 }
-const thoughts = () => events.filter(e => e.thought && e.kind !== "trade" && e.kind !== "range"); // trades are in Recent trades
+const thoughts = () => events.filter(e => e.thought && e.kind !== "trade" && e.kind !== "range" && !(e.kind === "browse" && e.thought.length < 80 && e.thought.startsWith(`${e.symbol}:`))); // trades are in Recent trades
 const History = () => <div>{thoughts().length ? thoughts().slice(0, 80).map(e => <button key={e.id} className={`entry ${e.kind}`} data-mint={e.mint}>
   <span className="entry-top"><b>{e.symbol ?? short(e.mint)}</b><span className="dim num">{clock(e.atMs)}</span></span>
   <span className="entry-thought">{e.thought}</span></button>) : <div className="dim empty">Nothing yet.</div>}</div>;
