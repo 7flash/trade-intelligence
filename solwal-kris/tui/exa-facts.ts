@@ -44,9 +44,9 @@ export async function coinWebsite(mint: string, rpcUrls: string[], get: typeof f
 }
 
 /** What the coin's own site shows right now, read live by Exa. */
-export async function siteNow(url: string, key: string, get: typeof fetch = fetch) {
-  const r = await get("https://api.exa.ai/contents", { method: "POST", headers: { "content-type": "application/json", "x-api-key": key }, signal: AbortSignal.timeout(14_000), body: JSON.stringify({ urls: [url], livecrawl: "always", livecrawlTimeout: 8_000, summary: { query: "What does this site actually do, and what live numbers does it show right now, like jobs, tasks, users, revenue or payouts? Be specific and short." } }) });
+export async function siteNow(url: string, key: string, get: typeof fetch = fetch, max = 420) {
+  const r = await get("https://api.exa.ai/contents", { method: "POST", headers: { "content-type": "application/json", "x-api-key": key }, signal: AbortSignal.timeout(14_000), body: JSON.stringify({ urls: [url], livecrawl: "always", livecrawlTimeout: 8_000, summary: { query: "What does this site actually do, and what live numbers does it show right now, like jobs, tasks, users, revenue or payouts? List each number exactly as shown, including counts like 5/10. Be specific and short." } }) });
   if (!r.ok) throw new Error(`Exa ${r.status}`);
   const j = await r.json() as { results?: { summary?: unknown }[] };
-  return clean(String(j.results?.[0]?.summary ?? "").replace(/^summary:?/i, ""), 420) || null;
+  return clean(String(j.results?.[0]?.summary ?? "").replace(/^summary:?/i, ""), max) || null;
 }

@@ -125,6 +125,11 @@ export function pickShape(hasLiveNumbers: boolean, recent: CalloutShape[], at = 
   return (fresh.length ? fresh : all)[Math.floor(at * (fresh.length ? fresh : all).length)]!;
 }
 export const goalLine = (goal: number, at = Math.random()) => [`easy ${goal}x from here.`, `${goal}x from here is not a stretch.`, `${goal}x from here feels fair.`, `i'm here for the ${goal}x.`][Math.floor(at * 4)]!;
+/** An update reports a change, so it needs numbers, and each one must really be in the two reads of the site. */
+export function backedByReads(text: string, before: string, now: string) {
+  const nums = (s: string) => s.replace(/(\d)\s+of\s+(\d)/gi, "$1/$2").match(/\d+(?:[.,/]\d+)*/g) ?? [], known = new Set([...nums(before), ...nums(now)]), said = nums(text);
+  return said.length > 0 && said.every(n => known.has(n));
+}
 /** Words that turn a callout back into a report, or put holders where a project should be. */
 export const flatCallout = (text: string) => /\b(callers?|holders?|ownership|launch stays|appears? to|seems?|might|potentially|i bought|same-ticker|copycat|isn't|solana (meme|token))\b|my bet is,/i.test(text);
 /** The model ends an analysis with OPEN or PASS on its own line. */

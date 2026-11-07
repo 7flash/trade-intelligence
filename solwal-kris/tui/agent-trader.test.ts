@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { rangeLevels, targetPlan } from "../packages/core/src/runtime/target-inventory.ts";
-import { agentPlan, agentSize, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, backedByReads, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -125,3 +125,9 @@ test("callouts do not keep one shape", () => {
   expect(goalLine(5, 0.99)).toContain("5x");
 });
 test("a callout that talks the coin down is refused", () => expect(flatCallout("chat talks fees, but pokehood has 10 same-ticker contracts and isn't the top one")).toBe(true));
+test("an update may only use numbers the site really showed", () => {
+  const before = "Task 2 shows 5 of 10 completed at 0.05 SOL", now = "Task 2 shows 10 of 10 completed at 0.05 SOL";
+  expect(backedByReads("task 2 went from 5/10 to 10/10", before, now)).toBe(true);
+  expect(backedByReads("task 2 went from 3/10 to 10/10", before, now)).toBe(false);
+  expect(backedByReads("the jobs are getting filled", before, now)).toBe(false);
+});

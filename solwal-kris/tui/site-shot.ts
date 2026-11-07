@@ -9,7 +9,7 @@ const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
 export const MIN_SHOT_BYTES = 20_000;
 
 export const shotArgs = (url: string, out: string, profile: string) => ["--headless=new", "--disable-gpu", "--disable-extensions", "--disable-sync", "--no-first-run", "--hide-scrollbars",
-  `--user-data-dir=${profile}`, "--window-size=1200,800", "--virtual-time-budget=8000", `--screenshot=${out}`, url];
+  `--user-data-dir=${profile}`, "--window-size=1200,1300", "--virtual-time-budget=8000", `--screenshot=${out}`, url];
 
 export async function takeSiteShot(url: string, out: string, timeoutMs = 25_000) {
   if (!/^https?:\/\//.test(url)) return null;
