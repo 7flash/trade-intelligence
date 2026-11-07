@@ -101,11 +101,11 @@ test("reads cap and age from the coin page", () => {
   expect(pageFacts("nothing here", "CkYP")).toEqual({ capUsd: null, ageMs: null });
 });
 test("the smallest position's first buy is enough to post a callout", () => { // pump.fun wants $2 held: 0.0222 SOL at $90
-  const cap = 100_000, size = agentSize(0.27, 0), p = agentPlan(cap, size);
+  const cap = 100_000, size = agentSize(0.2, 0), p = agentPlan(cap, size);
   const first = targetPlan({ levels: rangeLevels(p.buy, p.sell, p.steps).map(l => l / 1e9), budgetSol: size, balanceRaw: 0n, decimals: 6, priceSol: cap / 1e9 }).action;
   expect(first?.side).toBe("buy");
   expect(first?.side === "buy" ? first.amountSol : 0).toBeGreaterThan(0.028);
-  expect(agentSize(0.26, 0)).toBe(0); // under that he waits rather than buy a bag he cannot call
+  expect(agentSize(0.19, 0)).toBe(0); // under that he waits rather than buy a bag he cannot call
 });
 test("the goal follows the size of the coin, and most callouts name none", () => {
   expect([goalX(8_000), goalX(60_000), goalX(300_000), goalX(2_000_000), goalX(null)]).toEqual([5, 4, 3, 2, null]);
