@@ -24,28 +24,33 @@ export const lastReply = (list: Row[]) => list.findLast(r => r.type === "message
 
 /** The chat a prompt landed in, for closing its window when the send was never confirmed. Long messages show only their start. */
 export function chatOfPrompt(prompt: string, list: { name: string; rows: Row[] }[]) {
-  const sent = prompt.trim(), shown = (r: Row) => (r.text ?? "").replace(/\s*\u2026\n[^\n]*$/, "").trim();
+  const flat = (t: string) => t.replace(/\s+/g, ""), sent = flat(prompt), shown = (r: Row) => flat((r.text ?? "").replace(/\s*\u2026\n[^\n]*$/, ""));
   return list.find(c => c.rows.some(r => r.type === "message" && r.role === "user" && shown(r).length >= 200 && sent.startsWith(shown(r))))?.name ?? null;
 }
 const recentChats = () => readdirSync(files).filter(f => /^[0-9a-f]{8}-.*\.jsonl$/.test(f)).map(f => ({ f, at: statSync(resolve(files, f)).mtimeMs })).sort((a, b) => b.at - a.at).slice(0, 8)
   .map(({ f }) => ({ name: f.replace(/\.jsonl$/, ""), rows: rows(resolve(files, f)) }));
 
+/** ChatGPT folds a long message, so the bridge may fail to recognise a prompt that did go through: the chat it landed in still has the reply. */
+function chatNow(file: string, prompt: string) {
+  try { return boundChat(rows(file)); } catch (e) { if (!/Send was clicked/.test(String(e))) throw e; return chatOfPrompt(prompt, recentChats()); }
+}
 export async function askChat(prompt: string, timeoutMs = 120_000, image?: string) {
   const file = (await bridge("new")).split("\n").pop()!, id = file.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, ""), askFile = resolve(import.meta.dir, "..", ".range-bots", "chat", `${id}.txt`), end = Date.now() + timeoutMs;
+  let chat: string | null = null;
   try {
     await Bun.sleep(WINDOW_LOADS_MS);
     mkdirSync(dirname(askFile), { recursive: true }); writeFileSync(askFile, prompt);
     const fits = !!image && statSync(image).size <= MAX_IMAGE_BYTES;
     await bridge("send", id, askFile, ...(fits ? [image!] : []));
     while (Date.now() < end) {
-      const chat = boundChat(rows(file)), reply = chat ? lastReply(rows(resolve(files, `${chat}.jsonl`))) : null;
+      const reply = (chat ??= chatNow(file, prompt)) ? lastReply(rows(resolve(files, `${chat}.jsonl`))) : null;
       if (reply) return reply;
       await Bun.sleep(POLL_MS);
     }
     throw new Error("no reply in time");
   } finally {
     rmSync(askFile, { force: true });
-    await bridge("close", id).catch(async () => { const chat = chatOfPrompt(prompt, recentChats()); if (chat) await bridge("close", chat).catch(() => {}); });
+    await bridge("close", chat ?? id).catch(async () => { const found = chatOfPrompt(prompt, recentChats()); if (found) await bridge("close", found).catch(() => {}); });
   }
 }
 /** The same shape as jsx-ai's streamLLM: the whole reply arrives as one chunk. */
