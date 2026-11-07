@@ -27,8 +27,8 @@ test("no words leave the reader: an instruction in a post becomes nothing but co
   expect(calloutSignals([])).toBeNull();
 });
 test("sizes the whole balance over the slots left, above the reserve, up to the cap", () => {
-  expect(agentSize(1.0, 7)).toBe(0.07); expect(agentSize(0.63, 28)).toBe(0.2); expect(agentSize(0.13, 29)).toBe(0);
-  expect(agentSize(0.63, 30)).toBe(0); expect(agentSize(0.11, 0)).toBe(0); expect(agentSize(100, 0)).toBe(0.2);
+  expect(agentSize(1.0, 7)).toBe(0.07); expect(agentSize(0.63, 28)).toBe(0.07); expect(agentSize(0.13, 29)).toBe(0);
+  expect(agentSize(0.63, 60)).toBe(0); expect(agentSize(0.11, 0)).toBe(0); expect(agentSize(100, 0)).toBe(0.2);
   expect(agentSize(0.63, 0)).toBe(0.07); // a small balance still buys enough to post a callout
   expect(agentSize(0.12, 0)).toBe(0);
 });
