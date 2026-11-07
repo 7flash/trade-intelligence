@@ -144,7 +144,6 @@ async function weigh(mint: string) {
   const risk = info ? coinRisk(info, bundleShare(info.recent ?? [])) : null, book = await agentBook().catch(() => null), opened = readOwn()[mint];
   const size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, onPage = pageRead.get(mint), capUsd = info?.capUsd || onPage?.capUsd || null, ageMs = info?.launchedAtMs ? Date.now() - info.launchedAtMs : onPage?.ageMs ?? null;
   if (cantBuy().includes(mint)) return { risk, capUsd, size, book, refused: "cannot buy it" };
-  if (closedLow().includes(mint)) return { risk, capUsd, size, book, refused: "closed for low volume" };
   if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
   return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0, top10HeldPct: heldTop.get(mint) ?? null }) : "off" };
 }
