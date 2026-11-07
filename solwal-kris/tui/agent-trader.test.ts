@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { rangeLevels, targetPlan } from "../packages/core/src/runtime/target-inventory.ts";
-import { agentPlan, agentSize, backedByReads, deadCoin, splitCallout, verdictOf, zeroCount, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, backedByReads, chaseRefusal, deadCoin, splitCallout, verdictOf, zeroCount, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -33,6 +33,12 @@ test("sizes the whole balance over the slots left, above the reserve, up to the 
   expect(agentSize(0.12, 0)).toBe(0);
 });
 const clean: CoinRisk = { bundledPct: 5, earlyBoughtPct: 10, top10Pct: 20, goodHolders: 0, devFunded: 0 }, ok = { risk: clean, capUsd: 50_000, held: false, closedAgoMs: null, size: 0.05, ageMs: 3_600_000, callouts: 4, top10HeldPct: 12 };
+test("no open right after a pump, or on the way down from one", () => {
+  expect(chaseRefusal({ lowUsd: 5_000, highUsd: 24_000, nowUsd: 23_000 })).toBe("already up 3x in 30 minutes");
+  expect(chaseRefusal({ lowUsd: 10_000, highUsd: 20_000, nowUsd: 15_000 })).toBe("falling from its high");
+  expect(chaseRefusal({ lowUsd: 10_000, highUsd: 16_000, nowUsd: 15_000 })).toBeNull();
+  expect(chaseRefusal(null)).toBeNull();
+});
 test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen(ok)).toBeNull();
   expect(refuseOpen({ ...ok, lastOpenAgoMs: 600_000 })).toBe("just opened one");

@@ -95,6 +95,26 @@ export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; he
   if (o.lastOpenAgoMs != null && o.lastOpenAgoMs < l.openGapMs) return "just opened one"; // 13 opens an hour each lost 0.017 on average and forced a sale to pay for it; he keeps opening, 5 an hour
   return null;
 }
+/** The last 30 minutes before an open. 74 closes from the last 30 hours: up 3x or more, 12 closes and none won (-0.38 SOL);
+ * under 85% of the 30-minute high, 19 closes and one won (-0.54). Both together: 26 closes, 1 won, -0.73; the other 49 lost -0.47. */
+export function chaseRefusal(r: { lowUsd: number; highUsd: number; nowUsd: number } | null) {
+  if (!r || !(r.lowUsd > 0) || !(r.highUsd > 0)) return null; // no history: the other limits decide
+  if (r.nowUsd / r.lowUsd >= 3) return "already up 3x in 30 minutes";
+  if (r.nowUsd / r.highUsd < 0.85) return "falling from its high";
+  return null;
+}
+/** Low and high of the last 30 minutes, from GeckoTerminal one-minute candles: only asked for a coin that passed everything else. */
+export async function lastHalfHour(mint: string) {
+  const SOL = "So11111111111111111111111111111111111111112";
+  const pairs = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${mint}`, { signal: AbortSignal.timeout(8_000) }).then(r => r.json() as Promise<{ pairAddress?: string; quoteToken?: { address?: string }; liquidity?: { usd?: number } }[]>);
+  const pools = [...pairs].sort((a, b) => Number(b.quoteToken?.address === SOL) - Number(a.quoteToken?.address === SOL) || (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0)).slice(0, 2); // a pool quoted in another token often has no candles
+  for (const p of pools) {
+    const o = await fetch(`https://api.geckoterminal.com/api/v2/networks/solana/pools/${p.pairAddress}/ohlcv/minute?aggregate=1&limit=31&currency=usd`, { signal: AbortSignal.timeout(8_000) }).then(r => r.json() as Promise<{ data?: { attributes?: { ohlcv_list?: number[][] } } }>);
+    const c = o.data?.attributes?.ohlcv_list ?? [];
+    if (c.length >= 5) return { lowUsd: Math.min(...c.map(x => x[3]!)), highUsd: Math.max(...c.map(x => x[2]!)), nowUsd: c[0]![4]! };
+  }
+  return null;
+}
 /** The range rule he already had. Each step stays over $1, because a callout needs that much of the coin held. */
 export function agentPlan(capUsd: number, size: number, l = AGENT_LIMITS) {
   const { buy, sell } = slotRange(capUsd);

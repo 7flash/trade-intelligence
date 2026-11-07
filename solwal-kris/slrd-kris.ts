@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import { chatStream } from "./tui/chat-window.ts";
 import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
-import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
+import { agentPlan, agentSize, chaseRefusal, lastHalfHour, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
 import { coinWebsite, exaFacts, isProjectSite, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
 import { takeSiteShot } from "./tui/site-shot.ts";
@@ -145,7 +145,9 @@ async function weigh(mint: string) {
   const lastOpen = Math.max(0, ...Object.values(readOwn())), size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, onPage = pageRead.get(mint), capUsd = info?.capUsd || onPage?.capUsd || null, ageMs = info?.launchedAtMs ? Date.now() - info.launchedAtMs : onPage?.ageMs ?? null;
   if (cantBuy().includes(mint)) return { risk, capUsd, size, book, refused: "cannot buy it" };
   if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
-  return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, lastOpenAgoMs: lastOpen ? Date.now() - lastOpen : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0, top10HeldPct: heldTop.get(mint) ?? null }) : "off" };
+  const limits = existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, lastOpenAgoMs: lastOpen ? Date.now() - lastOpen : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0, top10HeldPct: heldTop.get(mint) ?? null }) : "off";
+  const refused = limits ?? chaseRefusal(await lastHalfHour(mint).catch(() => null)); // asked last: two outside calls, only for a coin that passed everything else
+  return { risk, capUsd, size, book, refused };
 }
 async function analyse(ev: KrisEvent, b: { stop: string; asked?: boolean; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null; page?: { capUsd: number | null; ageMs: number | null; site?: string | null } | null }) {
   const talk = (b.callouts as { whatCallersSay?: string[] } | null | undefined)?.whatCallersSay;
