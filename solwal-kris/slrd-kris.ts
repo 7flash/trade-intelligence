@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import { chatStream } from "./tui/chat-window.ts";
 import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
-import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, promisedSol, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
+import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
 import { coinWebsite, exaFacts, isProjectSite, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
 import { takeSiteShot } from "./tui/site-shot.ts";
@@ -130,7 +130,7 @@ function thinkOnBrowsing() {
 async function agentBook() {
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string }[]; inactive?: { wallet: string; mint: string }[]; wallets?: { name: string; sol: number | null }[] };
   const name = s.agentWallet ?? null, mine = [...s.bots, ...(s.inactive ?? [])].filter(x => x.wallet === name);
-  return { name, mints: new Set(mine.map(x => x.mint)), freeSol: (s.wallets?.find(w => w.name === name)?.sol ?? 0) - promisedSol(mine as Parameters<typeof promisedSol>[0]) };
+  return { name, mints: new Set(mine.map(x => x.mint)), freeSol: s.wallets?.find(w => w.name === name)?.sol ?? 0 };
 }
 const autoPath = resolve(dot, "kris-auto"), ownPath = resolve(dot, "kris-own.json");
 const ownCoins = () => { try { return readFileSync(resolve(dot, "own-coins"), "utf8").split(/\s+/).filter(Boolean); } catch { return []; } };
@@ -278,7 +278,7 @@ let lastClose = 0;
 async function closeForCash() {
   if (Date.now() - lastClose < 60_000) return;
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; wallets?: { name: string; sol?: number | null }[]; bots: { wallet: string; mint: string; symbol?: string | null; valueSol?: number | null }[] };
-  const cash = s.wallets?.find(w => w.name === s.agentWallet)?.sol; if (cash == null || cash >= 0.2) return; // well under the 0.5 he opens at: opening must never set off a forced sale
+  const cash = s.wallets?.find(w => w.name === s.agentWallet)?.sol; if (cash == null || cash >= AGENT_LIMITS.reserveSol + AGENT_LIMITS.minSizeSol) return; // he never stops opening: when cash cannot fund the next one, the quietest coin does
   const own = readOwn(), now = Date.now(), closed = closedLow();
   const coins = s.bots.filter(b => b.wallet === s.agentWallet && (b.valueSol ?? 0) > 0 && own[b.mint] != null && now - own[b.mint]! >= 1_800_000 && !closed.includes(b.mint) && !ownCoins().includes(b.mint)); if (!coins.length) return;
   const volume = new Map<string, number>();
