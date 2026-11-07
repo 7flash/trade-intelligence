@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { rangeLevels, targetPlan } from "../packages/core/src/runtime/target-inventory.ts";
-import { agentPlan, agentSize, backedByReads, neverBought, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, backedByReads, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -140,4 +140,10 @@ test("only a position that never bought anything is dropped", () => {
   expect(neverBought({ ...stuck, valueSol: 0.01 }, at, at + 600_000)).toBe(false); // still holds tokens
   expect(neverBought({ ...stuck, amountRaw: "5" }, at, at + 600_000)).toBe(false);
   expect(neverBought({ ...stuck, last: "1:00:00 AM buy confirmed" }, at, at + 600_000)).toBe(false);
+});
+test("low cash closes the coin with the least volume, and among equals the biggest", () => {
+  const dead = { hourVolumeUsd: 0, valueSol: 0.1 }, small = { hourVolumeUsd: 0, valueSol: 0.02 }, live = { hourVolumeUsd: 5000, valueSol: 0.2 }, unknown = { hourVolumeUsd: null, valueSol: 0.3 };
+  expect(lowestVolume([live, small, dead, unknown])).toBe(dead);
+  expect(lowestVolume([live, unknown])).toBe(live);
+  expect(lowestVolume([unknown])).toBe(null); // unknown volume is not low volume
 });

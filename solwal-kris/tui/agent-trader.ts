@@ -125,6 +125,10 @@ export function pickShape(hasLiveNumbers: boolean, recent: CalloutShape[], at = 
   return (fresh.length ? fresh : all)[Math.floor(at * (fresh.length ? fresh : all).length)]!;
 }
 export const goalLine = (goal: number, at = Math.random()) => [`easy ${goal}x from here.`, `${goal}x from here is not a stretch.`, `${goal}x from here feels fair.`, `i'm here for the ${goal}x.`][Math.floor(at * 4)]!;
+/** Cash too low to open anything: the coin nobody trades goes first, and among equals the one that frees the most SOL. */
+export function lowestVolume<T extends { hourVolumeUsd: number | null; valueSol: number }>(coins: T[]) {
+  return coins.filter(x => x.hourVolumeUsd != null && x.valueSol > 0).sort((x, y) => x.hourVolumeUsd! - y.hourVolumeUsd! || y.valueSol - x.valueSol)[0] ?? null;
+}
 /** A position he opened that could never buy: nothing spent, nothing held, and the last try failed. It only blocks a slot. */
 export function neverBought(b: { costSol?: number | null; valueSol?: number | null; amountRaw?: string | null; last?: string | null }, openedAtMs: number | undefined, nowMs: number) {
   return openedAtMs != null && nowMs - openedAtMs >= 600_000 && !b.costSol && !b.valueSol && (!b.amountRaw || b.amountRaw === "0") && /buy failed/.test(b.last ?? "");
