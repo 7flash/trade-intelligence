@@ -32,7 +32,7 @@ test("sizes the whole balance over the slots left, above the reserve, up to the 
   expect(agentSize(0.63, 0)).toBe(0.07); // a small balance still buys enough to post a callout
   expect(agentSize(0.12, 0)).toBe(0);
 });
-const clean: CoinRisk = { bundledPct: 5, earlyBoughtPct: 10, top10Pct: 20, goodHolders: 0, devFunded: 0 }, ok = { risk: clean, capUsd: 50_000, held: false, closedAgoMs: null, size: 0.05, ageMs: 3_600_000, callouts: 4, top10HeldPct: 12 };
+const clean: CoinRisk = { bundledPct: 5, earlyBoughtPct: 10, top10Pct: 20, goodHolders: 0, devFunded: 0 }, ok = { risk: clean, capUsd: 150_000, held: false, closedAgoMs: null, size: 0.05, ageMs: 3_600_000, callouts: 4, top10HeldPct: 12 };
 test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen(ok)).toBeNull();
   expect(refuseOpen({ ...ok, risk: null })).toBe("no bundle read");
@@ -47,7 +47,7 @@ test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen({ ...ok, top10HeldPct: null })).toBe("no holder read");
   expect(refuseOpen({ ...ok, held: true })).toBe("already held");
   expect(refuseOpen({ ...ok, size: 0 })).toBe("no slot or no SOL");
-  expect(refuseOpen({ ...ok, capUsd: 3_000 })).toBe("cap too small");
+  expect(refuseOpen({ ...ok, capUsd: 99_000 })).toBe("cap too small");
   expect(refuseOpen({ ...ok, closedAgoMs: 60_000 })).toBe("closed recently");
 });
 test("wallets the creator funded count, from clusters or transfers", () => {
