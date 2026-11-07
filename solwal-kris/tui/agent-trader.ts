@@ -141,6 +141,12 @@ export function backedByReads(text: string, before: string, now: string) {
 export const flatCallout = (text: string) => /\b(callers?|holders?|ownership|launch stays|appears? to|seems?|might|potentially|i bought|same-ticker|copycat|isn't|solana (meme|token))\b|my bet is,/i.test(text);
 /** A live counter reads 0 until its page has loaded, and readers of a site see it before that. A count of nothing is never worth saying. */
 export const zeroCount = (text: string) => /(^|[^\d.,$])(0|zero)\s+[a-z]/i.test(text);
+/** A reply that opens carries the post for other traders after its verdict: his read stays his read, the post is kept apart. */
+export function splitCallout(text: string) {
+  const m = /\n\s*\**CALLOUT:\**\s*([\s\S]*)$/i.exec(text);
+  const said = m?.[1]?.replace(/\*+/g, "").trim() ?? "";
+  return { read: m ? text.slice(0, m.index) : text, callout: said && !/^SKIP\b/i.test(said) ? said : null };
+}
 /** The model ends an analysis with OPEN or PASS on its own line. */
 export const verdictOf = (text: string) => /(^|\n)\s*OPEN\s*$/.test(text);
 export const withoutVerdict = (text: string) => text.replace(/\s*\n?\s*(OPEN|OPE|OP|PASS|PAS|PA)\s*$/, "").trimEnd();
