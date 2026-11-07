@@ -4,7 +4,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync }
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
-const BRIDGE = process.env.CHATGPT_BRIDGE ?? "C:/Code/chatgpt-bridge", WINDOW_LOADS_MS = 8_000, POLL_MS = 1_000, MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const BRIDGE = process.env.CHATGPT_BRIDGE ?? "C:/Code/chatgpt-bridge", POLL_MS = 1_000, MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const files = resolve(process.env.CONVERSATIONS_ROOT ?? resolve(homedir(), ".conversations"), "conversations");
 type Row = { type?: string; role?: string; text?: string; status?: string; conversation?: string; error?: string };
 
@@ -35,10 +35,9 @@ function chatNow(file: string, prompt: string) {
   try { return boundChat(rows(file)); } catch (e) { if (!/Send was clicked/.test(String(e))) throw e; return chatOfPrompt(prompt, recentChats()); }
 }
 export async function askChat(prompt: string, timeoutMs = 120_000, image?: string) {
-  const file = (await bridge("new")).split("\n").pop()!, id = file.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, ""), askFile = resolve(import.meta.dir, "..", ".range-bots", "chat", `${id}.txt`), end = Date.now() + timeoutMs;
+  const file = (await bridge("new", "--hidden")).split("\n").pop()!, id = file.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, ""), askFile = resolve(import.meta.dir, "..", ".range-bots", "chat", `${id}.txt`), end = Date.now() + timeoutMs;
   let chat: string | null = null;
   try {
-    await Bun.sleep(WINDOW_LOADS_MS);
     mkdirSync(dirname(askFile), { recursive: true }); writeFileSync(askFile, prompt);
     const fits = !!image && statSync(image).size <= MAX_IMAGE_BYTES;
     await bridge("send", id, askFile, ...(fits ? [image!] : []));
@@ -53,8 +52,13 @@ export async function askChat(prompt: string, timeoutMs = 120_000, image?: strin
     await bridge("close", chat ?? id).catch(async () => { const found = chatOfPrompt(prompt, recentChats()); if (found) await bridge("close", found).catch(() => {}); });
   }
 }
+/** A hidden window can lack its file picker; the thought still matters more than the picture. */
+async function askWithPicture(prompt: string, timeoutMs: number, image?: string) {
+  try { return await askChat(prompt, timeoutMs, image); }
+  catch (e) { if (image && /file picker/i.test(String(e))) return askChat(prompt.replace(/\n\nThe attached picture is this coin's own website\.$/, ""), timeoutMs); throw e; }
+}
 /** The same shape as jsx-ai's streamLLM: the whole reply arrives as one chunk. */
 export async function* chatStream(messages: { role: string; content: string }[], o: { timeoutMs: number; image?: string }) {
   const said = messages.map(m => m.content).join("\n\n");
-  yield await askChat(o.image ? `${said}\n\nThe attached picture is this coin's own website.` : said, Math.max(o.timeoutMs, 120_000), o.image);
+  yield await askWithPicture(o.image ? `${said}\n\nThe attached picture is this coin's own website.` : said, Math.max(o.timeoutMs, 120_000), o.image);
 }
