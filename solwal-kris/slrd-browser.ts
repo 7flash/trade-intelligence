@@ -86,6 +86,9 @@ const noted = (href: string) => { recent = remember(recent, href); try { writeFi
 async function visit(tries = 0): Promise<void> {
   if (tries > 3) return go(HOME);
   const stop = TOUR[step++ % TOUR.length]!;
+  // A position opened by hand: he goes and reads that coin before anything else.
+  const asked = nextAsked(); askedMint = asked;
+  if (asked) { noted(`/coin/${asked}`); await go(coinPage(asked)); return log(`asked to read: ${asked}`); }
   if (stop === "portfolio") return go(portfolio());
   const ov: any = await fetch(`${view}/api/overview`, { headers: { cookie: `slrd_web=${bridgeToken}` }, signal: AbortSignal.timeout(10_000) }).then(r => r.json()).catch(() => null);
   const skip = [...recent, ...(ov?.bots ?? []).map((b: any) => b.mint as string)]; // what he holds is not news
@@ -111,6 +114,11 @@ async function visit(tries = 0): Promise<void> {
 }
 /** What this stop shows, for Kris to think about: see safeFacts for why it is only numbers and names. */
 let posted = "";
+let askedMint: string | null = null;
+function nextAsked() {
+  const path = resolve(dot, "kris-read-next.json");
+  try { const [first, ...rest] = JSON.parse(readFileSync(path, "utf8")) as string[]; if (first) writeFileSync(path, JSON.stringify(rest)); return first ?? null; } catch { return null; }
+}
 async function read(stop: TourStop) {
   const seen = JSON.parse(await value(`JSON.stringify({ title: document.title, path: location.pathname, text: document.body.innerText, coins: [...document.querySelectorAll('a[href^="/coin/"]')].filter(a => !a.getAttribute("href").includes("highlight_callout")).slice(0, 6).map(a => { let e = a; for (let i = 0; i < 4 && e && !/\\$/.test(e.innerText); i++) e = e.parentElement; return e ? e.innerText : a.innerText; }) })`) ?? "null") as { title: string; path: string; text: string; coins: string[] } | null;
   if (!seen || blocked(seen.title)) return;
@@ -122,7 +130,7 @@ async function read(stop: TourStop) {
   writeFileSync(resolve(dot, "kris-browsing.json"), JSON.stringify({ at: readNow, stop, mint: coin ? seen.path.slice(6) : "",
     coin: coin ? safeName(seen.title.split(/ \$| \|/)[0] ?? "") : "",
     facts: coin ? safeFacts(at < 0 ? "" : seen.text.slice(at, at + 1_500)) : stop === "home" ? seen.coins.map(trendingRow) : [],
-    callout: stop === "callout" ? safeFacts(posted, 10) : [], callouts, top10HeldPct: holders, page: coin ? { ...pageFacts(seen.text, seen.path.slice(6)), site: await headerSite() } : null }));
+    callout: stop === "callout" ? safeFacts(posted, 10) : [], callouts, asked: coin && seen.path.slice(6) === askedMint, top10HeldPct: holders, page: coin ? { ...pageFacts(seen.text, seen.path.slice(6)), site: await headerSite() } : null }));
 }
 /** A real mouse click, with Kris's cursor on the stream going there first. */
 async function realClick(at: { x: number; y: number }, box: Pick<TradeBox, "wide" | "high">, travel = 1_100) {

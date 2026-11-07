@@ -110,6 +110,7 @@ async function drainThoughts() {
         break;
       } catch (e) { if (attempt === 2) throw e; await Bun.sleep(1_500); }
     } catch (e) { console.log(`${new Date().toISOString()} thought failed: ${String(e).slice(0, 160)}`); if (job.ev.kind === "result" || job.ev.kind === "review" || job.ev.kind === "trade") { job.ev.thought ??= job.ev.title; save(); } } // no Codex: results still reach the history
+    pendingRead.delete(job.ev.mint);
     if (job.ev.kind === "browse") writeFileSync(analysedPath, JSON.stringify({ at: browseSeen })); // the browser may move on
     await Bun.sleep(THOUGHT_GAP_MS);
   }
@@ -147,15 +148,16 @@ async function weigh(mint: string) {
   if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
   return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0, top10HeldPct: heldTop.get(mint) ?? null }) : "off" };
 }
-async function analyse(ev: KrisEvent, b: { stop: string; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null; page?: { capUsd: number | null; ageMs: number | null; site?: string | null } | null }) {
+async function analyse(ev: KrisEvent, b: { stop: string; asked?: boolean; coin: string; mint: string; facts: string[]; callout: string[]; callouts?: unknown; top10HeldPct?: number | null; page?: { capUsd: number | null; ageMs: number | null; site?: string | null } | null }) {
   const talk = (b.callouts as { whatCallersSay?: string[] } | null | undefined)?.whatCallersSay;
   if (talk?.length) callerTalk.set(b.mint, talk);
   if (b.callouts) { const { whatCallersSay: _, ...numbers } = b.callouts as Record<string, unknown>; callerNumbers.set(b.mint, numbers); }
   calloutCount.set(b.mint, (b.callouts as { posts?: number } | null | undefined)?.posts ?? 0); heldTop.set(b.mint, b.top10HeldPct ?? null); if (b.page) pageRead.set(b.mint, b.page);
   const w = await weigh(b.mint).catch(() => null);
-  if (w?.refused === null) await learnCoin(b.mint, b.coin);
+  if (b.asked) { pendingRead.set(b.mint, Date.now()); if (!called.has(b.mint)) wantCallout.add(b.mint); }
+  if (w?.refused === null || b.asked) await learnCoin(b.mint, b.coin);
   console.log(`${new Date().toISOString()} weighed ${b.coin}: ${w ? w.refused ?? "clear" : "failed"}, cap ${Math.round(w?.capUsd ?? 0)}, early ${w?.risk?.earlyBoughtPct}, dev ${w?.risk?.devFunded}, top10 ${b.top10HeldPct}, posts ${calloutCount.get(b.mint)}, size ${w?.size}`);
-  think(ev, { looking: b.stop === "callout" ? "a coin someone called out, with their position and profit" : b.stop === "screener" ? "a live coin you spotted moving, before most people" : b.stop === "movers" ? "one of the coins moving hardest on pump.fun right now" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, callouts: b.callouts ?? undefined, ...(w?.risk ?? {}), top10HeldPct: b.top10HeldPct ?? undefined, knownAboutCoin: known.get(b.mint) ?? undefined, canOpen: w?.refused === null, whyNot: w?.refused ?? undefined });
+  think(ev, { looking: b.asked ? "a coin you just took a position in" : b.stop === "callout" ? "a coin someone called out, with their position and profit" : b.stop === "screener" ? "a live coin you spotted moving, before most people" : b.stop === "movers" ? "one of the coins moving hardest on pump.fun right now" : "a hot trending coin", coin: b.coin || null, numbers: b.facts, calloutNumbers: b.callout.length ? b.callout : undefined, callouts: b.callouts ?? undefined, ...(w?.risk ?? {}), top10HeldPct: b.top10HeldPct ?? undefined, knownAboutCoin: known.get(b.mint) ?? undefined, canOpen: b.asked || w?.refused === null, whyNot: b.asked ? undefined : w?.refused ?? undefined });
 }
 /** Once per coin, and only for coins he could really buy: each search costs money. */
 const known = new Map<string, CoinFacts | null>();
@@ -179,7 +181,10 @@ async function openOwn(mint: string) {
   console.log(`${new Date().toISOString()} opened ${mint.slice(0, 6)}: ${plan.budget} SOL, $${plan.buy} to $${plan.sell}, ${plan.steps} steps`);
 }
 /** One public callout per position, right after its first buy, from what he already wrote about it. */
-const calledPath = resolve(dot, "kris-called.json"), wantCallout = new Set<string>();
+const calledPath = resolve(dot, "kris-called.json"), wantCallout = new Set<string>(), pendingRead = new Map<string, number>();
+/** A position he did not choose himself has no read behind it: the browser goes to read it, and the callout waits for that. */
+const askPath = resolve(dot, "kris-read-next.json"), askRead = (mint: string) => { let list: string[] = []; try { list = JSON.parse(readFileSync(askPath, "utf8")); } catch {} writeFileSync(askPath, JSON.stringify([...new Set([...list, mint])])); pendingRead.set(mint, Date.now()); };
+const realRead = (mint: string) => events.some(e => e.mint === mint && e.kind === "browse" && (e.thought?.length ?? 0) >= 80);
 let called = new Set<string>(); try { called = new Set(JSON.parse(readFileSync(calledPath, "utf8")) as string[]); } catch {}
 const readyCallout = new Map<string, string>(), callerTalk = new Map<string, string[]>(), callerNumbers = new Map<string, unknown>(), calloutCount = new Map<string, number>(), heldTop = new Map<string, number | null>(), pageRead = new Map<string, { capUsd: number | null; ageMs: number | null; site?: string | null }>();
 /** The chart in words: where it sits against its high and low, and what the last minutes did. No history is fetched. */
@@ -281,7 +286,8 @@ async function shotOf(mint: string) {
 function sendCallouts() {
   for (const mint of wantCallout) {
     if (ownCoins().includes(mint)) { wantCallout.delete(mint); continue; }
-    const read = events.find(e => e.mint === mint && e.kind === "browse" && e.thought) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
+    if (Date.now() - (pendingRead.get(mint) ?? 0) < 180_000) continue; // his read of it is on the way
+    const read = events.find(e => e.mint === mint && e.kind === "browse" && (e.thought?.length ?? 0) >= 80) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
     if (!read?.thought) continue;
     wantCallout.delete(mint); called.add(mint); writeFileSync(calledPath, JSON.stringify([...called]));
     void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(async text => { if (text) { const ev = add({ atMs: Date.now(), kind: "callout" as KrisEvent["kind"], mint, symbol: read.symbol, title: "Callout", thought: text }); if (ev) save(); writeCallout(import.meta.dir, { mint, text, image: await shotOf(mint) }); } else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
@@ -436,7 +442,7 @@ for (;;) {
     if (seeded) { thinkOnBrowsing(); sendCallouts(); }
     for (const b of ov.bots.filter(x => !(x as { inactive?: boolean }).inactive)) {
       const at = b.lastTradeAtMs ?? 0, prev = seenTrade.get(b.mint);
-      if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); }
+      if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); if (!called.has(b.mint) && !realRead(b.mint)) askRead(b.mint); }
       if (!seeded && (b.holdingSteps ?? 0) > 0) called.add(b.mint); // already bought before this started
       seenBots.add(b.mint);
       if (seeded && at && at > (prev ?? 0)) {
