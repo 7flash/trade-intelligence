@@ -73,6 +73,7 @@ function trackRecord(rows: Closed[]) {
 const waiting: { ev: KrisEvent; facts: Record<string, unknown> }[] = []; let thinking = false;
 const thoughtAt = new Map<string, number>();
 function think(ev: KrisEvent, facts: Record<string, unknown>) {
+  if (ev.kind === "trade" || ev.kind === "range") return; // the range decided: Recent trades already shows it
   if (ev.kind === "trade" && Date.now() - (thoughtAt.get(ev.mint) ?? 0) < 60_000) return; // one thought a minute per coin keeps Codex within its limit
   thoughtAt.set(ev.mint, Date.now());
   const minor = ev.kind === "coin" || ev.kind === "migrated";
