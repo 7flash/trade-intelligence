@@ -167,7 +167,8 @@ async function learnCoin(mint: string, symbol: string) {
   const facts = await exaFacts(mint, symbol, key).catch(e => { console.log(`${new Date().toISOString()} exa ${symbol}: ${String(e).slice(0, 100)}`); return null; });
   const urls = (() => { try { return [...readFileSync(resolve(homedir(), ".solard", "rpc.json"), "utf8").matchAll(/https:\/\/[^"\s]*helius[^"\s]*/g)].map(m => m[0]); } catch { return []; } })();
   const site = pageRead.get(mint)?.site ?? await coinWebsite(mint, urls).catch(() => null), live = site ? await siteNow(site, key).catch(e => { console.log(`${new Date().toISOString()} site ${symbol}: ${String(e).slice(0, 100)}`); return null; }) : null;
-  known.set(mint, facts || live ? { what: facts?.what ?? "", who: facts?.who ?? "", flags: facts?.flags ?? [], siteNow: live, site: live ? site : null } : null);
+  const ownSite = isProjectSite(site) ? site : null; // the picture does not depend on the reader having managed the page
+  known.set(mint, facts || live || ownSite ? { what: facts?.what ?? "", who: facts?.who ?? "", flags: facts?.flags ?? [], siteNow: live, site: ownSite } : null);
   console.log(`${new Date().toISOString()} exa ${symbol}: ${facts ? `${facts.what.slice(0, 90)} | flags ${facts.flags.length}` : "nothing known"} | site ${live ? live.slice(0, 90) : "none"}`);
 }
 /** Limits are read again here: the verdict alone never spends anything. */
@@ -294,9 +295,9 @@ async function closeForCash() {
 if (!process.argv[2]) { setInterval(() => void watchSites(), 300_000); setInterval(() => void closeForCash().catch(e => console.log(`closeForCash: ${String(e).slice(0, 100)}`)), 60_000); setInterval(() => void closeDead().catch(e => console.log(`closeDead: ${String(e).slice(0, 100)}`)), 300_000); setInterval(() => void dropStuck().catch(e => console.log(`dropStuck: ${String(e).slice(0, 100)}`)), 60_000); }
 /** A site Exa could read gets its picture on the callout; anything else goes out as words only. */
 async function shotOf(mint: string) {
-  const site = known.get(mint)?.site; if (!site) return undefined;
-  const out = await takeSiteShot(site, resolve(dot, "shots", `${mint}.png`)).catch(() => null);
-  console.log(`${new Date().toISOString()} shot ${mint.slice(0, 6)}: ${out ? "ok" : "none"}`);
+  const site = known.get(mint)?.site ?? pageRead.get(mint)?.site; if (!isProjectSite(site)) { console.log(`${new Date().toISOString()} shot ${mint.slice(0, 6)}: no site of its own`); return undefined; }
+  const out = await takeSiteShot(site, resolve(dot, "shots", `${mint}.png`), 40_000).catch(() => null);
+  console.log(`${new Date().toISOString()} shot ${mint.slice(0, 6)}: ${out ? "ok" : `none from ${site}`}`);
   return out ?? undefined;
 }
 function sendCallouts() {
