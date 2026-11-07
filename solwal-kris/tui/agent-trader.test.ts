@@ -167,6 +167,8 @@ test("only a coin nobody trades and we have not traded for two hours is dead", (
   const now = 10_000_000;
   expect(deadCoin(50, now - 7_300_000, now)).toBe(true);
   expect(deadCoin(150, now - 7_300_000, now)).toBe(false);
+  expect(deadCoin(150_000, now - 10_900_000, now)).toBe(true); // three hours without a trade, whatever its volume
   expect(deadCoin(50, now - 3_600_000, now)).toBe(false);
   expect(deadCoin(null, now - 7_300_000, now)).toBe(false); // no reading is not no volume
+  expect(deadCoin(50, null, now)).toBe(false);
 });

@@ -101,9 +101,9 @@ export function agentPlan(capUsd: number, size: number, l = AGENT_LIMITS) {
 }
 /** A public post: no addresses and no links, whatever the model wrote. */
 export const calloutText = (s: string) => s.replace(/https?:\/\/\S+/g, "").replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "").replace(/\s+/g, " ").trim().slice(0, 280);
-/** Nobody trades it and neither do we: the SOL is better in a coin that moves. */
+/** No coin sits for hours without a trade. Nobody trades it after 2 hours, or it simply has not reached a level in 3: the SOL goes to a coin that moves. */
 export const deadCoin = (hourVolumeUsd: number | null, lastTradeAtMs: number | null | undefined, nowMs: number) =>
-  hourVolumeUsd != null && hourVolumeUsd < 100 && lastTradeAtMs != null && nowMs - lastTradeAtMs >= 2 * 3_600_000;
+  lastTradeAtMs != null && (nowMs - lastTradeAtMs >= 3 * 3_600_000 || (hourVolumeUsd != null && hourVolumeUsd < 100 && nowMs - lastTradeAtMs >= 2 * 3_600_000));
 /** A callout has to be about this coin: it says the name, in plain letters. */
 export const namesCoin = (text: string, symbol: string | null) => { const name = (symbol ?? "").replace(/[^\p{L}\p{N}]/gu, "").toLowerCase(); return name.length > 0 && text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").includes(name); };
 /** Every automatic range has the same width, so the goal comes from what the coin is worth: small coins have more room. Most callouts name none. */
