@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { rangeLevels, targetPlan } from "../packages/core/src/runtime/target-inventory.ts";
-import { agentPlan, agentSize, backedByReads, deadCoin, splitCallout, verdictOf, zeroCount, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, backedByReads, deadCoin, promisedSol, splitCallout, verdictOf, zeroCount, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -171,4 +171,10 @@ test("only a coin nobody trades and we have not traded for two hours is dead", (
   expect(deadCoin(50, now - 3_600_000, now)).toBe(false);
   expect(deadCoin(null, now - 7_300_000, now)).toBe(false); // no reading is not no volume
   expect(deadCoin(50, null, now)).toBe(false);
+});
+test("cash already promised to open positions cannot open a new one", () => {
+  const bots = [{ budgetSol: 0.2, steps: 5, holdingSteps: 1 }, { budgetSol: 0.1, steps: 4, holdingSteps: 4 }, { budgetSol: 0.1, steps: 5, holdingSteps: 0 }];
+  expect(promisedSol(bots)).toBeCloseTo(0.13, 6); // 0.16 + 0 + 0.1 still to buy, half counted
+  expect(agentSize(1 - promisedSol(bots), 3)).toBeGreaterThan(0);
+  expect(agentSize(0.2 - promisedSol(bots), 3)).toBe(0);
 });

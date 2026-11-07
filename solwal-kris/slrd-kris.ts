@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import { chatStream } from "./tui/chat-window.ts";
 import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
-import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
+import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, promisedSol, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
 import { coinWebsite, exaFacts, isProjectSite, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
 import { takeSiteShot } from "./tui/site-shot.ts";
@@ -130,7 +130,7 @@ function thinkOnBrowsing() {
 async function agentBook() {
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string }[]; inactive?: { wallet: string; mint: string }[]; wallets?: { name: string; sol: number | null }[] };
   const name = s.agentWallet ?? null, mine = [...s.bots, ...(s.inactive ?? [])].filter(x => x.wallet === name);
-  return { name, mints: new Set(mine.map(x => x.mint)), freeSol: s.wallets?.find(w => w.name === name)?.sol ?? 0 };
+  return { name, mints: new Set(mine.map(x => x.mint)), freeSol: (s.wallets?.find(w => w.name === name)?.sol ?? 0) - promisedSol(mine as Parameters<typeof promisedSol>[0]) };
 }
 const autoPath = resolve(dot, "kris-auto"), ownPath = resolve(dot, "kris-own.json");
 const ownCoins = () => { try { return readFileSync(resolve(dot, "own-coins"), "utf8").split(/\s+/).filter(Boolean); } catch { return []; } };

@@ -71,6 +71,9 @@ export function pageFacts(text: string, mint: string) {
 }
 
 /** The whole balance over the slots left, above the reserve, never over the cap, and never so small a step cannot send. */
+/** The SOL open positions may still ask for: their unfilled steps. Half counts, since they will not all fall to the bottom together. A new coin waits until cash covers that. */
+export const promisedSol = (bots: { budgetSol?: number | null; steps?: number | null; holdingSteps?: number | null }[]) =>
+  bots.reduce((sum, b) => { const n = b.steps || 1; return sum + (b.budgetSol ?? 0) * Math.max(0, n - (b.holdingSteps ?? 0)) / n; }, 0) / 2;
 export function agentSize(freeSol: number, open: number, l = AGENT_LIMITS) {
   const slots = l.maxPositions - open; if (slots <= 0) return 0;
   const spare = freeSol - l.reserveSol;
