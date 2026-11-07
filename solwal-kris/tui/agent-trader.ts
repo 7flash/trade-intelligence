@@ -1,5 +1,4 @@
-/** What lets the agent open positions on his own: callouts turned into numbers, and the limits he cannot pass.
- * Callout text is written by strangers and never reaches the model: this code reads it and he gets counts. */
+/** What lets the agent open positions on his own: callouts turned into numbers, and the limits he cannot pass. */
 import { goodHolders, SLOT_CONFIG, slotRange } from "./kris-slots.ts";
 
 export const AGENT_LIMITS = { maxPositions: 60, maxSizeSol: 0.2, minSizeSol: 0.07, reserveSol: 0.1, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs,

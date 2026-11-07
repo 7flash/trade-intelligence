@@ -4,11 +4,10 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { pickCoin, pickScreener, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, headerLinksScript, calloutsScript, holdersScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
+import { pickCoin, pickScreener, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, headerLinksScript, calloutsScript, calloutsMoreScript, holdersScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
 import { isProjectSite } from "./tui/exa-facts.ts";
 import { execution, nextCallout, nextOrder, readOrder, writeCallout, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
 import { calloutSignals, pageFacts, splitCallouts, topHoldersPct, type Callout } from "./tui/agent-trader.ts";
-import { safeQuotes } from "./tui/callout-words.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
 const bridgeToken = readFileSync(resolve(dot, "bridge-token"), "utf8").trim();
@@ -140,13 +139,17 @@ async function tap(pattern: string) {
   if (!steady) return false;
   await realClick(steady, steady, 0); return true;
 }
-/** He opens the coin's Callouts tab in front of viewers and reads every post. Only counts leave here. */
+/** He opens the coin's Callouts tab in front of viewers and reads every post, scrolling while more load. */
+const MAX_CALLOUTS = 300, calloutLine = (p: Callout) => `${p.who}${p.positionUsd != null ? ` (holds $${Math.round(p.positionUsd)}, profit $${Math.round(p.profitUsd ?? 0)})` : ""}${p.ageMin != null ? `, ${Math.round(p.ageMin)} min ago` : ""}: ${p.body}`;
 async function readCallouts() {
   if (!(await tap("/^Callouts/"))) return null;
-  let posts: Callout[] = [];
-  for (let i = 0; i < 8 && !posts.length; i++) { await sleep(700); posts = splitCallouts(await value(calloutsScript) ?? ""); } // they load after the tab opens
+  const seen = new Map<string, Callout>(), read = async () => { for (const p of splitCallouts(await value(calloutsScript) ?? "", MAX_CALLOUTS)) seen.set(`${p.who}|${p.body}`, p); return seen.size; };
+  for (let i = 0; i < 8 && !seen.size; i++) { await sleep(700); await read(); } // they load after the tab opens
+  for (let i = 0, still = 0; seen.size >= 30 && seen.size < MAX_CALLOUTS && still < 2 && i < 30; i++) { const had = seen.size; await value(calloutsMoreScript); await sleep(700); still = await read() > had ? 0 : still + 1; }
+  if (seen.size >= 30) await value("scrollTo(0, 0)");
+  const posts = [...seen.values()];
   log(`read ${posts.length} callouts`);
-  return posts.length ? { ...calloutSignals(posts)!, whatCallersSay: safeQuotes(posts) } : null;
+  return posts.length ? { ...calloutSignals(posts)!, whatCallersSay: posts.map(calloutLine) } : null;
 }
 /** One public post, in the site's own box, from the words Kris already wrote. A dry job stops before the post. */
 /** Hands the file straight to the form's own input, the one behind its photo button. */
