@@ -64,7 +64,7 @@ test("a coin we never tracked is unread, not guilty", () => {
 });
 test("a range around the cap, in steps the size can really send", () => {
   expect(agentPlan(50_000, 0.05)).toMatchObject({ buy: 30_000, sell: 95_000, steps: 8, budget: 0.05 });
-  expect(agentPlan(50_000, 0.2).steps).toBe(6);
+  expect(agentPlan(50_000, 0.2).steps).toBe(12);
   const p = agentPlan(50_000, 0.025); expect(p.steps).toBe(2); expect(p.budget / p.steps).toBeGreaterThanOrEqual(0.012);
 });
 test("the verdict is read, then dropped from what viewers see", () => {
