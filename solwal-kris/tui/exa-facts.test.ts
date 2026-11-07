@@ -26,3 +26,6 @@ test("only a project's own site counts", () => {
   expect(isProjectSite("https://bagsapp.io/x")).toBe(true);
   for (const u of ["https://x.com/a", "https://solscan.io/account/a", "https://pump.fun/coin/a", "https://t.me/a", "file:///c:/x", null]) expect(isProjectSite(u)).toBe(false);
 });
+test("a flag saying there are no flags is not a flag", () => {
+  expect(coinFacts(JSON.stringify({ what: "a coin", redFlags: ["No flags reported by current monitoring services as of November 7, 2026.", "Creator rugged two coins."] }))?.flags).toEqual(["Creator rugged two coins."]);
+});

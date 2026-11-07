@@ -8,7 +8,7 @@ const clean = (s: unknown, max = 160) => String(s ?? "").replace(/(\d)\/(\d)/g, 
 export function coinFacts(content: unknown): CoinFacts | null {
   const c = (typeof content === "string" ? JSON.parse(content) : content) as { what?: unknown; whoBehind?: unknown; redFlags?: unknown } | null;
   const nothing = (s: string) => /no (information|data|details)|not available|nothing (is )?known|unknown token/i.test(s) ? "" : s;
-  const facts = { what: nothing(clean(c?.what)), who: clean(c?.whoBehind), flags: (Array.isArray(c?.redFlags) ? c!.redFlags : []).map(f => clean(f)).filter(Boolean).slice(0, 3) };
+  const facts = { what: nothing(clean(c?.what)), who: clean(c?.whoBehind), flags: (Array.isArray(c?.redFlags) ? c!.redFlags : []).map(f => clean(f)).filter(f => f && !/^no\b.{0,40}\b(flags?|issues?|concerns?|reported)\b/i.test(f)).slice(0, 3) };
   return facts.what || facts.who || facts.flags.length ? facts : null;
 }
 
