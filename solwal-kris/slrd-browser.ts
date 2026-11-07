@@ -25,25 +25,32 @@ export const blocked = (title: string) => /just a moment|security verification|a
 
 // Its own profile with no extensions and no sync, so nothing of the owner's can load into it.
 const openEdge = () => Bun.spawn([EDGE, `--remote-debugging-port=${PORT}`, `--user-data-dir=${resolve(dot, "browser-clean")}`, "--disable-extensions", "--disable-sync", "--no-first-run", "--no-default-browser-check", "--window-size=1320,860", "about:blank"], { stdout: "ignore", stderr: "ignore" });
-openEdge();
-let page: { webSocketDebuggerUrl: string } | null = null;
-for (let i = 0; i < 60 && !page; i++) {
-  await sleep(500);
-  if (i === 30) openEdge(); // a restart can catch the last window still closing
-  // Our own tab, never one that was already open.
-  page = await fetch(`http://127.0.0.1:${PORT}/json/new?${HOME}`, { method: "PUT" }).then(r => r.ok ? r.json() as Promise<{ webSocketDebuggerUrl: string }> : null).catch(() => null);
-}
-if (!page) throw new Error("browser did not open");
-const ws = new WebSocket(page.webSocketDebuggerUrl);
-await new Promise(r => { ws.onopen = r; });
-let id = 0;
+// One of these at a time: a copy left behind by a restart must not stay around.
+const pidPath = resolve(dot, "browser.pid");
+try { process.kill(Number(readFileSync(pidPath, "utf8"))); } catch {}
+writeFileSync(pidPath, String(process.pid));
+let ws!: WebSocket, id = 0;
 const waits = new Map<number, (v: any) => void>();
-ws.onmessage = e => { const m = JSON.parse(String(e.data)); waits.get(m.id)?.(m.result); waits.delete(m.id); };
+/** Our own tab, never one that was already open. Also the way back after the tab or the browser goes away. */
+async function connect() {
+  openEdge();
+  let page: { webSocketDebuggerUrl: string } | null = null;
+  for (let i = 0; i < 60 && !page; i++) {
+    await sleep(500);
+    if (i === 30) openEdge(); // a restart can catch the last window still closing
+    page = await fetch(`http://127.0.0.1:${PORT}/json/new?${HOME}`, { method: "PUT" }).then(r => r.ok ? r.json() as Promise<{ webSocketDebuggerUrl: string }> : null).catch(() => null);
+  }
+  if (!page) throw new Error("browser did not open");
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  await new Promise(r => { ws.onopen = r; });
+  ws.onmessage = e => { const m = JSON.parse(String(e.data)); waits.get(m.id)?.(m.result); waits.delete(m.id); };
+}
+await connect();
 // A page load can swallow the reply to a call in flight, and one lost reply must not stop the stream.
 const cdp = (method: string, params: Record<string, unknown> = {}) => new Promise<any>(r => {
   const n = ++id, timer = setTimeout(() => { waits.delete(n); r(undefined); }, 6_000);
   waits.set(n, v => { clearTimeout(timer); r(v); });
-  ws.send(JSON.stringify({ id: n, method, params }));
+  try { ws.send(JSON.stringify({ id: n, method, params })); } catch {}
 });
 await cdp("Page.enable");
 log("browser open on pump.fun");
@@ -221,11 +228,17 @@ setInterval(async () => {
   setTimeout(() => { if (!wasBlocked) void scroll(); }, STOP_MS / 2);
 }, STOP_MS);
 
+let lost = 0;
 for (;;) {
-  const seen = (await cdp("Runtime.evaluate", { expression: "JSON.stringify([document.title, location.href])", returnByValue: true }))?.result?.value ?? '["",""]';
+  const seen = (await cdp("Runtime.evaluate", { expression: "JSON.stringify([document.title, location.href])", returnByValue: true }))?.result?.value;
+  if (!seen) { // no answer is a lost connection, not a check on the page
+    if (++lost >= 5) { log("browser connection lost, reconnecting"); lost = 0; await connect().catch(e => log(`reconnect: ${String(e).slice(0, 80)}`)); await cdp("Page.enable"); }
+    await sleep(1_000); continue;
+  }
+  lost = 0;
   const [title, href] = JSON.parse(seen) as [string, string];
   const stop = blocked(title) || !onPump(href);
-  if (stop !== wasBlocked) { wasBlocked = stop; log(stop ? "Cloudflare check showing: click it in the browser window" : "check passed, streaming"); }
+  if (stop !== wasBlocked) { wasBlocked = stop; log(stop ? (blocked(title) ? "Cloudflare check showing: click it in the browser window" : `off pump.fun: ${href.slice(0, 60)}`) : "back on pump.fun, streaming"); }
   if (!stop) {
     const shot = await cdp("Page.captureScreenshot", { format: "jpeg", quality: 55 });
     here = href;
