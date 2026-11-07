@@ -148,6 +148,16 @@ async function readCallouts() {
   return posts.length ? { ...calloutSignals(posts)!, whatCallersSay: safeQuotes(posts) } : null;
 }
 /** One public post, in the site's own box, from the words Kris already wrote. A dry job stops before the post. */
+/** Hands the file straight to the form's own input, the one behind its photo button. */
+async function attachImage(path: string) {
+  const found = await cdp("Runtime.evaluate", { expression: `[...document.querySelectorAll('[role=dialog] input[type=file]')].pop()` });
+  const objectId = found?.result?.objectId; if (!objectId) return false;
+  await cdp("DOM.enable");
+  const done = await cdp("DOM.setFileInputFiles", { files: [path], objectId });
+  if (!done) return false;
+  await sleep(3_500); // it uploads before the post button is ready
+  return true;
+}
 async function postCallout(job: CalloutJob) {
   const url = coinPage(job.mint); if (url === HOME) return;
   await go(url);
@@ -164,6 +174,7 @@ async function postCallout(job: CalloutJob) {
   if (!form?.input) { await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); return log(`callout ${job.mint.slice(0, 6)}: no box`); }
   await realClick(form.input, form);
   await cdp("Input.insertText", { text: job.text }); await sleep(700);
+  if (job.image) log(`callout ${job.mint.slice(0, 6)}: picture ${await attachImage(job.image) ? "attached" : "not attached"}`);
   form = JSON.parse(await value(calloutFormScript) ?? "null");
   log(`callout filled: ${JSON.stringify(form).slice(0, 300)}`);
   if (job.dry || !form?.send || form.send.off || form.written < 5) { await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); return log(`callout ${job.mint.slice(0, 6)}: ${job.dry ? "dry, not posted" : "no send button"}`); }

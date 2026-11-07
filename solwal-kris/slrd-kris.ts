@@ -11,6 +11,7 @@ import { bundleShare, type BuyRow } from "./tui/bundles.ts";
 import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, flatCallout, goalLine, goalX, namesCoin, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
 import { coinWebsite, exaFacts, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
+import { takeSiteShot } from "./tui/site-shot.ts";
 import { startOutcome, stepOutcome, type Outcome } from "./tui/kris-outcomes.ts";
 import { freshMigration, goodHolders, planSlots, slotPlan, slotKeepsRange, slotSize, slotQualifies, SLOT_CONFIG, type Slot, type SlotCoin, type SlotKind } from "./tui/kris-slots.ts";
 import { coinVerdict, lastFill, rangeSide, rangeTitle, scrubReason, tradeReaction, tradeTitle, type KrisEvent } from "./webapp/public/kris-events.ts";
@@ -143,7 +144,7 @@ async function learnCoin(mint: string, symbol: string) {
   const facts = await exaFacts(mint, symbol, key).catch(e => { console.log(`${new Date().toISOString()} exa ${symbol}: ${String(e).slice(0, 100)}`); return null; });
   const urls = (() => { try { return [...readFileSync(resolve(homedir(), ".solard", "rpc.json"), "utf8").matchAll(/https:\/\/[^"\s]*helius[^"\s]*/g)].map(m => m[0]); } catch { return []; } })();
   const site = await coinWebsite(mint, urls).catch(() => null), live = site ? await siteNow(site, key).catch(e => { console.log(`${new Date().toISOString()} site ${symbol}: ${String(e).slice(0, 100)}`); return null; }) : null;
-  known.set(mint, facts || live ? { what: facts?.what ?? "", who: facts?.who ?? "", flags: facts?.flags ?? [], siteNow: live } : null);
+  known.set(mint, facts || live ? { what: facts?.what ?? "", who: facts?.who ?? "", flags: facts?.flags ?? [], siteNow: live, site: live ? site : null } : null);
   console.log(`${new Date().toISOString()} exa ${symbol}: ${facts ? `${facts.what.slice(0, 90)} | flags ${facts.flags.length}` : "nothing known"} | site ${live ? live.slice(0, 90) : "none"}`);
 }
 /** Limits are read again here: the verdict alone never spends anything. */
@@ -184,13 +185,20 @@ async function composeCallout(symbol: string | null, myRead: string, whatCallers
   }
   return ""; // nothing about this coin is better left unsaid
 }
+/** A site Exa could read gets its picture on the callout; anything else goes out as words only. */
+async function shotOf(mint: string) {
+  const site = known.get(mint)?.site; if (!site) return undefined;
+  const out = await takeSiteShot(site, resolve(dot, "shots", `${mint}.png`)).catch(() => null);
+  console.log(`${new Date().toISOString()} shot ${mint.slice(0, 6)}: ${out ? "ok" : "none"}`);
+  return out ?? undefined;
+}
 function sendCallouts() {
   for (const mint of wantCallout) {
     if (ownCoins().includes(mint)) { wantCallout.delete(mint); continue; }
     const read = events.find(e => e.mint === mint && e.kind === "browse" && e.thought) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
     if (!read?.thought) continue;
     wantCallout.delete(mint); called.add(mint); writeFileSync(calledPath, JSON.stringify([...called]));
-    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(text => { if (text) writeCallout(import.meta.dir, { mint, text }); else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
+    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(async text => { if (text) writeCallout(import.meta.dir, { mint, text, image: await shotOf(mint) }); else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
   }
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */

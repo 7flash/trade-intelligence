@@ -1,6 +1,6 @@
 /** What the web really says about one exact coin. Exa reads the pages, so no raw page reaches the model that can read this
  * machine; only short cleaned fields do, and only from pages that carry this coin's full address, because tickers are reused. */
-export type CoinFacts = { what: string; who: string; flags: string[]; siteNow?: string | null };
+export type CoinFacts = { what: string; who: string; flags: string[]; siteNow?: string | null; site?: string | null };
 
 const clean = (s: unknown, max = 160) => String(s ?? "").replace(/(\d)\/(\d)/g, "$1 of $2").replace(/https?:\/\/\S+/g, " ").replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, " ").replace(/[^\p{L}\p{N} .,'$%()\-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, max);
 
