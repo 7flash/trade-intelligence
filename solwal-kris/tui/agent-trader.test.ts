@@ -71,7 +71,7 @@ test("a coin we never tracked is unread, not guilty", () => {
   expect(refuseOpen({ ...unread, ageMs: 600_000 })).toBe("no early read on a young coin");
 });
 test("a range around the cap, in steps the size can really send", () => {
-  expect(agentPlan(50_000, 0.05)).toMatchObject({ buy: 30_000, sell: 95_000, steps: 4, budget: 0.05 });
+  expect(agentPlan(50_000, 0.05)).toMatchObject({ buy: 13_000, sell: 75_000, steps: 4, budget: 0.05, percentSteps: true }); // 12_500 rounds to two digits
   expect(agentPlan(50_000, 0.2).steps).toBe(6);
   const p = agentPlan(50_000, 0.025); expect(p.steps).toBe(2); expect(p.budget / p.steps).toBeGreaterThanOrEqual(0.012);
 });
@@ -108,12 +108,15 @@ test("reads cap and age from the coin page", () => {
   expect(pageFacts(["BTC", "1mo", "167", "C5xp…pump", "Market cap", "$14.5M"].join(nl), "C5xph2").ageMs).toBe(2_592_000_000);
   expect(pageFacts("nothing here", "CkYP")).toEqual({ capUsd: null, ageMs: null });
 });
-test("the smallest position's first buy is enough to post a callout", () => { // pump.fun wants $2 held: 0.0222 SOL at $90
-  const cap = 100_000, size = agentSize(0.2, 0), p = agentPlan(cap, size);
-  const first = targetPlan({ levels: rangeLevels(p.buy, p.sell, p.steps).map(l => l / 1e9), budgetSol: size, balanceRaw: 0n, decimals: 6, priceSol: cap / 1e9 }).action;
+test("the smallest position reaches a callout's $2 by its second buy", () => { // pump.fun wants $2 held: 0.0222 SOL at $90
+  const cap = 100_000, size = agentSize(0.2, 0), p = agentPlan(cap, size), levels = rangeLevels(p.buy, p.sell, p.steps, p.percentSteps).map(l => l / 1e9);
+  const first = targetPlan({ levels, budgetSol: size, balanceRaw: 0n, decimals: 6, priceSol: cap / 1e9, fullSize: true }).action;
   expect(first?.side).toBe("buy");
-  expect(first?.side === "buy" ? first.amountSol : 0).toBeGreaterThan(0.028);
-  expect(agentSize(0.19, 0)).toBe(0); // under that he waits rather than buy a bag he cannot call
+  const held = first?.side === "buy" ? first.tokensRaw : 0n, next = levels[levels.findIndex(l => l > cap / 1e9) - 1]!;
+  const second = targetPlan({ levels, budgetSol: size, balanceRaw: held, decimals: 6, priceSol: next, fullSize: true }).action;
+  const bag = Number(held + (second?.side === "buy" ? second.tokensRaw : 0n)) / 1e6 * next;
+  expect(bag).toBeGreaterThan(0.0245);
+  expect(agentSize(0.19, 0)).toBe(0);
 });
 test("the goal follows the size of the coin, and most callouts name none", () => {
   expect([goalX(8_000), goalX(60_000), goalX(300_000), goalX(2_000_000), goalX(null)]).toEqual([5, 4, 3, 2, null]);

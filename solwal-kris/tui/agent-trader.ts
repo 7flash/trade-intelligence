@@ -116,9 +116,13 @@ export async function lastHalfHour(mint: string) {
   return null;
 }
 /** The range rule he already had. Each step stays over $1, because a callout needs that much of the coin held. */
+/** The range starts low: coins he opens fall hard first (2373 seen: median -67% in 30 minutes at $10k-$100k).
+ * Replayed on his 31 closed opens of Nov 6-8: 0.6x-1.9x even steps -0.48 SOL, 0.25x-1.5x percent steps -0.03 (better in both halves). */
+export const AGENT_RANGE = { low: 0.25, high: 1.5 };
+const roundTwo = (v: number) => { const m = 10 ** (Math.floor(Math.log10(v)) - 1); return Math.round(v / m) * m; };
 export function agentPlan(capUsd: number, size: number, l = AGENT_LIMITS) {
-  const { buy, sell } = slotRange(capUsd);
-  return { buy, sell, steps: Math.max(2, Math.min(l.maxSteps, Math.floor(size / l.stepMinSol))), budget: size };
+  const buy = roundTwo(capUsd * AGENT_RANGE.low), sell = roundTwo(capUsd * AGENT_RANGE.high);
+  return { buy, sell, steps: Math.max(2, Math.min(l.maxSteps, Math.floor(size / l.stepMinSol))), budget: size, percentSteps: true };
 }
 /** A public post: no addresses and no links, whatever the model wrote. */
 export const calloutText = (s: string) => s.replace(/https?:\/\/\S+/g, "").replace(/[1-9A-HJ-NP-Za-km-z]{32,}/g, "").replace(/\s+/g, " ").trim().slice(0, 280);

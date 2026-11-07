@@ -303,8 +303,11 @@ async function shotOf(mint: string) {
   console.log(`${new Date().toISOString()} shot ${mint.slice(0, 6)}: ${out ? "ok" : `none from ${site}`}`);
   return out ?? undefined;
 }
+/** pump.fun posts a callout only with $2 of the coin held: with the low range the first buy is smaller, so the callout waits for the second. */
+const heldValue = new Map<string, number>(), CALLOUT_MIN_SOL = 0.0245;
 function sendCallouts() {
   for (const mint of wantCallout) {
+    if ((heldValue.get(mint) ?? 0) < CALLOUT_MIN_SOL) continue; // stays wanted until the bag is big enough
     if (ownCoins().includes(mint)) { wantCallout.delete(mint); continue; }
     if (Date.now() - (pendingRead.get(mint) ?? 0) < 180_000) continue; // his read of it is on the way
     const read = events.find(e => e.mint === mint && e.kind === "browse" && (e.thought?.length ?? 0) >= 80) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
@@ -461,6 +464,7 @@ for (;;) {
     reviewClosed(ov.closedRows ?? [], seeded);
     if (seeded) { thinkOnBrowsing(); sendCallouts(); }
     for (const b of ov.bots.filter(x => !(x as { inactive?: boolean }).inactive)) {
+      heldValue.set(b.mint, (b as { valueSol?: number | null }).valueSol ?? 0);
       const at = b.lastTradeAtMs ?? 0, prev = seenTrade.get(b.mint);
       if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); if (!called.has(b.mint) && !realRead(b.mint)) askRead(b.mint); }
       if (!seeded && (b.holdingSteps ?? 0) > 0) called.add(b.mint); // already bought before this started
