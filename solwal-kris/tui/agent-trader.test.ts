@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { rangeLevels, targetPlan } from "../packages/core/src/runtime/target-inventory.ts";
-import { agentPlan, agentSize, backedByReads, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, backedByReads, neverBought, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -130,4 +130,14 @@ test("an update may only use numbers the site really showed", () => {
   expect(backedByReads("task 2 went from 5/10 to 10/10", before, now)).toBe(true);
   expect(backedByReads("task 2 went from 3/10 to 10/10", before, now)).toBe(false);
   expect(backedByReads("the jobs are getting filled", before, now)).toBe(false);
+});
+test("only a position that never bought anything is dropped", () => {
+  const stuck = { costSol: 0, valueSol: 0, amountRaw: null, last: "7:44:03 AM buy failed quote" }, at = 1_000_000;
+  expect(neverBought(stuck, at, at + 600_000)).toBe(true);
+  expect(neverBought(stuck, at, at + 599_000)).toBe(false); // still has its first ten minutes
+  expect(neverBought(stuck, undefined, at + 600_000)).toBe(false); // not one he opened
+  expect(neverBought({ ...stuck, costSol: -0.2 }, at, at + 600_000)).toBe(false); // sold out at a profit
+  expect(neverBought({ ...stuck, valueSol: 0.01 }, at, at + 600_000)).toBe(false); // still holds tokens
+  expect(neverBought({ ...stuck, amountRaw: "5" }, at, at + 600_000)).toBe(false);
+  expect(neverBought({ ...stuck, last: "1:00:00 AM buy confirmed" }, at, at + 600_000)).toBe(false);
 });

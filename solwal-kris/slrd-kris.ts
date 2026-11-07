@@ -8,7 +8,7 @@ import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
-import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, flatCallout, goalLine, goalX, namesCoin, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
+import { agentPlan, agentSize, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, flatCallout, goalLine, goalX, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
 import { coinWebsite, exaFacts, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
 import { takeSiteShot } from "./tui/site-shot.ts";
@@ -118,6 +118,7 @@ async function agentBook() {
 }
 const autoPath = resolve(dot, "kris-auto"), ownPath = resolve(dot, "kris-own.json");
 const ownCoins = () => { try { return readFileSync(resolve(dot, "own-coins"), "utf8").split(/\s+/).filter(Boolean); } catch { return []; } };
+const cantBuyPath = resolve(dot, "kris-cant-buy.json"), cantBuy = () => { try { return JSON.parse(readFileSync(cantBuyPath, "utf8")) as string[]; } catch { return [] as string[]; } };
 const readOwn = () => { try { return JSON.parse(readFileSync(ownPath, "utf8")) as Record<string, number>; } catch { return {}; } };
 /** Everything he decides from: the numbers on the page, bundles and supply from the terminal, and the limits. */
 async function weigh(mint: string) {
@@ -125,6 +126,7 @@ async function weigh(mint: string) {
   const info = r?.ok ? await r.json() as { recent?: BuyRow[]; earlyBoughtPct?: number | null; exact?: boolean; capUsd?: number | null; launchedAtMs?: number | null; creator?: string | null; clusters?: { source?: string; members?: number }[]; transfers?: { from?: string[] }[]; wallets?: { pct: number; ours?: boolean; profile?: { coins?: number; wins?: number; realizedSol?: number } | null }[] } : null;
   const risk = info ? coinRisk(info, bundleShare(info.recent ?? [])) : null, book = await agentBook().catch(() => null), opened = readOwn()[mint];
   const size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, onPage = pageRead.get(mint), capUsd = info?.capUsd || onPage?.capUsd || null, ageMs = info?.launchedAtMs ? Date.now() - info.launchedAtMs : onPage?.ageMs ?? null;
+  if (cantBuy().includes(mint)) return { risk, capUsd, size, book, refused: "cannot buy it" };
   if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
   return { risk, capUsd, size, book, refused: existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0, top10HeldPct: heldTop.get(mint) ?? null }) : "off" };
 }
@@ -221,7 +223,17 @@ async function watchSites() {
     w.postedAt = Date.now(); save(); writeCallout(import.meta.dir, { mint: b.mint, text, update: true, image: image ?? undefined });
   } catch (e) { console.log(`${new Date().toISOString()} watch: ${String(e).slice(0, 100)}`); } finally { watching = false; }
 }
-if (!process.argv[2]) setInterval(() => void watchSites(), 300_000);
+/** Positions he opened that never managed one buy give their slot back. "remove" sells nothing, and there is nothing to sell. */
+async function dropStuck() {
+  const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string; symbol?: string | null; costSol?: number | null; valueSol?: number | null; amountRaw?: string | null; last?: string | null }[] };
+  const own = readOwn(), now = Date.now();
+  for (const b of s.bots.filter(x => x.wallet === s.agentWallet && neverBought(x, own[x.mint], now))) {
+    const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "remove", wallet: b.wallet, mint: b.mint }) });
+    console.log(`${new Date().toISOString()} dropped ${b.symbol}: never bought, ${r.ok ? "slot freed" : `remove failed ${r.status}`}`);
+    if (r.ok) writeFileSync(cantBuyPath, JSON.stringify([...new Set([...cantBuy(), b.mint])]));
+  }
+}
+if (!process.argv[2]) { setInterval(() => void watchSites(), 300_000); setInterval(() => void dropStuck().catch(e => console.log(`dropStuck: ${String(e).slice(0, 100)}`)), 60_000); }
 /** A site Exa could read gets its picture on the callout; anything else goes out as words only. */
 async function shotOf(mint: string) {
   const site = known.get(mint)?.site; if (!site) return undefined;

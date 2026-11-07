@@ -125,6 +125,10 @@ export function pickShape(hasLiveNumbers: boolean, recent: CalloutShape[], at = 
   return (fresh.length ? fresh : all)[Math.floor(at * (fresh.length ? fresh : all).length)]!;
 }
 export const goalLine = (goal: number, at = Math.random()) => [`easy ${goal}x from here.`, `${goal}x from here is not a stretch.`, `${goal}x from here feels fair.`, `i'm here for the ${goal}x.`][Math.floor(at * 4)]!;
+/** A position he opened that could never buy: nothing spent, nothing held, and the last try failed. It only blocks a slot. */
+export function neverBought(b: { costSol?: number | null; valueSol?: number | null; amountRaw?: string | null; last?: string | null }, openedAtMs: number | undefined, nowMs: number) {
+  return openedAtMs != null && nowMs - openedAtMs >= 600_000 && !b.costSol && !b.valueSol && (!b.amountRaw || b.amountRaw === "0") && /buy failed/.test(b.last ?? "");
+}
 /** An update reports a change, so it needs numbers, and each one must really be in the two reads of the site. */
 export function backedByReads(text: string, before: string, now: string) {
   const nums = (s: string) => s.replace(/(\d)\s+of\s+(\d)/gi, "$1/$2").match(/\d+(?:[.,/]\d+)*/g) ?? [], known = new Set([...nums(before), ...nums(now)]), said = nums(text);
