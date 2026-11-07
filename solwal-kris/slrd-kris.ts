@@ -178,6 +178,7 @@ async function openOwn(mint: string) {
   const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "add", wallet: w.book.name, mint, ...plan }) });
   if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 100)}`);
   writeFileSync(ownPath, JSON.stringify({ ...readOwn(), [mint]: Date.now() }));
+  if (called.delete(mint)) writeFileSync(calledPath, JSON.stringify([...called])); // a new position gets its own callout
   console.log(`${new Date().toISOString()} opened ${mint.slice(0, 6)}: ${plan.budget} SOL, $${plan.buy} to $${plan.sell}, ${plan.steps} steps`);
 }
 /** One public callout per position, right after its first buy, from what he already wrote about it. */
@@ -208,8 +209,9 @@ async function composeCallout(symbol: string | null, myRead: string, whatCallers
   for (let attempt = 1; attempt <= 3; attempt++) {
     let text = "";
     for await (const chunk of streamLLM([{ role: "system", content: CALLOUT_SYSTEM }, { role: "user", content: JSON.stringify({ coin: symbol, shape: CALLOUT_SHAPES[shape], goalX: goal ?? undefined, knownAboutCoin: mint ? known.get(mint) ?? undefined : undefined, myRead, whatCallersSay, callers, chart, ...(attempt > 1 ? { rejected: "that line did not name the coin, or used a banned word" } : {}) }) }], { timeoutMs: 60_000 })) text += chunk;
-    if (/^\s*SKIP\s*$/.test(text)) return "";
+    if (/^\s*SKIP\s*$/.test(text)) { console.log(`${new Date().toISOString()} callout ${symbol}: model said SKIP`); return ""; }
     if (namesCoin(text, symbol) && !flatCallout(text) && !zeroCount(text)) return calloutText(!goal || text.toLowerCase().includes(`${goal}x`) ? text : new RegExp(`(^|\\s)${goal} (from here|is the goal)`, "i").test(text) ? text.replace(new RegExp(`(^|\\s)${goal} (from here|is the goal)`, "i"), `$1${goal}x $2`) : `${text.trim().replace(/\.?$/, ".")} ${goalLine(goal)}`);
+    console.log(`${new Date().toISOString()} callout ${symbol}: attempt ${attempt} rejected, names ${namesCoin(text, symbol)} flat ${flatCallout(text)} zero ${zeroCount(text)}: ${text.slice(0, 120)}`);
   }
   return ""; // nothing about this coin is better left unsaid
 }
