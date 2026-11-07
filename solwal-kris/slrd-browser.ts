@@ -167,7 +167,8 @@ async function postCallout(job: CalloutJob) {
   await go(url);
   for (let i = 0; i < 24; i++) { await sleep(500); if ((await value("location.pathname")) === `/coin/${job.mint}` && await readBox()) break; }
   let open = false;
-  for (let i = 0; i < 12 && !open; i++) { await sleep(700); open = await tap("/^Add your callout/"); } // the holder's card loads after the trade box
+  if (job.update) { for (let i = 0; i < 8; i++) { await sleep(700); if (await tap("/^Yours/")) break; } await sleep(1_500); } // his own post sits on that tab
+  for (let i = 0; i < 12 && !open; i++) { await sleep(700); open = await tap(job.update ? "/^Update callout/" : "/^Add your callout/"); } // the holder's card loads after the trade box
   if (!open) { // right after a buy the page may not know he holds it yet
     if ((job.tries ?? 0) < 3) setTimeout(() => writeCallout(root, { ...job, tries: (job.tries ?? 0) + 1 }), 30_000);
     return log(`callout ${job.mint.slice(0, 6)}: no button, try ${(job.tries ?? 0) + 1}`);
