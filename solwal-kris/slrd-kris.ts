@@ -500,7 +500,7 @@ for (;;) {
     for (const b of ov.bots.filter(x => !(x as { inactive?: boolean }).inactive)) {
       heldValue.set(b.mint, (b as { valueSol?: number | null }).valueSol ?? 0);
       const at = b.lastTradeAtMs ?? 0, prev = seenTrade.get(b.mint);
-      if (seeded && !seenBots.has(b.mint)) { const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); if (!called.has(b.mint) && !realRead(b.mint)) askRead(b.mint); }
+      if (seeded && !seenBots.has(b.mint)) { if (called.delete(b.mint)) writeFileSync(calledPath, JSON.stringify([...called])); /* every new position gets its callout, opened by him or by hand (MARS, 8 Nov, inherited an old mark) */ const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); if (!called.has(b.mint) && !realRead(b.mint)) askRead(b.mint); }
       if (!seeded && (b.holdingSteps ?? 0) > 0) called.add(b.mint); // already bought before this started
       seenBots.add(b.mint);
       if (seeded && at && at > (prev ?? 0)) {
