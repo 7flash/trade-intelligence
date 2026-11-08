@@ -169,7 +169,7 @@ export function backedByReads(text: string, before: string, now: string) {
   return said.length > 0 && said.every(n => known.has(n));
 }
 /** Words that turn a callout back into a report, or put holders where a project should be. */
-export const flatCallout = (text: string) => /\b(callers?|holders?|ownership|launch stays|appears? to|seems?|might|potentially|i bought|same-ticker|copycat|isn't|solana (meme|token))\b|my bet is,/i.test(text);
+export const flatCallout = (text: string) => /\b(callers?|holders?|ownership|launch stays|appears? to|seems?|might|potentially|i bought|same-ticker|copycat|isn't|solana (meme|token)|metadata|mutable|mint authority|liquidity|lower range|top wallets|overtake selling|creator sold)\b|my bet is,/i.test(text); // chain trivia is not a story (knight, 8 Nov)
 /** A live counter reads 0 until its page has loaded, and readers of a site see it before that. A count of nothing is never worth saying. */
 export const zeroCount = (text: string) => /(^|[^\d.,$])(0|zero)\s+[a-z]/i.test(text);
 /** A reply that opens carries the post for other traders after its verdict: his read stays his read, the post is kept apart. */

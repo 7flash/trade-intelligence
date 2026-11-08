@@ -204,3 +204,8 @@ test("a coin he said OPEN to beats a bigger one he passed on; passed coins still
   expect(ranked.map(r => r.mint)).toEqual(["picked", "passedBig", "passedMid"]);
   expect(rankPool([{ mint: "p", refused: null, capUsd: 1, picked: false }]).map(r => r.mint)).toEqual(["p"]);
 });
+
+test("chain trivia never passes as a callout", () => {
+  expect(flatCallout("knight needs buying to overtake selling before the lower range breaks. nine top wallets buying, but creator sold and metadata stays mutable. quick gamble.")).toBe(true);
+  expect(flatCallout("knight is the mars society coin elon replied to. wallets tied to past rugs are in it, so quick gamble.")).toBe(false);
+});
