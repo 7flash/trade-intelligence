@@ -194,6 +194,10 @@ async function choose() {
     const ranked = rankPool(weighed);
     console.log(`${new Date().toISOString()} choosing from ${seen.length}: ${weighed.map(w => `${w.symbol}${w.picked ? "*" : ""} $${Math.round(w.capUsd ?? 0)}${w.refused ? ` (${w.refused})` : ""}`).join(", ")}`);
     if (ranked[0]) await openOwn(ranked[0].mint, ranked[0]);
+    // A coin whose cap could not be read (the price feed was restarting: all three read $0 on 8 Nov) waits for the next
+    // round instead of being dropped; it ages out with the 30-minute limit on reload like any candidate.
+    else for (const c of seen) if (!(weighed.find(w => w.mint === c.mint)?.capUsd)) pool.set(c.mint, c);
+    savePool();
   } catch (e) { console.log(`${new Date().toISOString()} open failed: ${String(e).slice(0, 120)}`); }
   finally { choosing = false; }
 }
