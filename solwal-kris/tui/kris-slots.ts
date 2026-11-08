@@ -3,7 +3,7 @@
  *   new pair: 4 to 10 minutes old, past the first dump (149 tracked coins: median -19% in the first 5 minutes, -3% from
  *   5 to 10). migrated: migrated in the last 10, and sized larger (median +4% from 1 to 10 minutes).
  * A full side swaps its weakest coin only for one clearly better, so fees are not paid for noise. */
-export type SlotCoin = { mint: string; symbol?: string | null; capUsd?: number | null; trades?: number; traders?: number; smart?: number; volSol?: number; ageMs?: number | null; migrated?: boolean };
+export type SlotCoin = { mint: string; symbol?: string | null; capUsd?: number | null; trades?: number; traders?: number; seasoned?: number | null; smart?: number; volSol?: number; ageMs?: number | null; migrated?: boolean };
 export type SlotKind = "new" | "migrated";
 export type Slot = { mint: string; symbol: string | null; kind: SlotKind; openedAtMs: number; score: number; buy: number; sell: number };
 export type SlotAction = { type: "open"; kind: SlotKind; coin: SlotCoin; score: number; buy: number; sell: number; swap: boolean } | { type: "close"; slot: Slot; reason: string; forSwap: boolean };
@@ -11,11 +11,14 @@ export type SlotAction = { type: "open"; kind: SlotKind; coin: SlotCoin; score: 
 export const SLOT_CONFIG = { maxNew: 16, maxMigrated: 8, budgetSol: 0.02, migratedBudgetSol: 0.02, minSizeSol: 0.02, steps: 6, newBuyUsd: 5_000, newSellUsd: 60_000, stepPct: 15, stepSol: 0.0033, gasSol: 0.02, newMinAgeMs: 240_000, newAgeMs: 600_000, migratedAgeMs: 600_000, actionGapMs: 15_000, swapGapMs: 30_000, minHoldMs: 300_000, swapRatio: 2, rotateNewMs: 900_000, rotateMigratedMs: 900_000, staleMs: 1_800_000, reopenAfterMs: 1_800_000, maxBundleShare: 0.3, smallBundleShare: 0.1, maxEarlyPct: 60, smallEarlyPct: 25 };
 type Config = typeof SLOT_CONFIG;
 
-/** Distinct wallets count most, smart wallets far more, volume a little. Few wallets across many trades is churn. */
+/** Wallets with a history count, smart wallets far more. Volume no longer counts: wash trading fakes it for free, and
+ * the top migrated coins by the old score were rugs (owner, 8 Nov). A crowd of fresh wallets (bundles, sybils) scales the score
+ * down, and few wallets across many trades is churn. */
 export function slotScore(c: SlotCoin) {
-  const traders = c.traders ?? 0, trades = c.trades ?? 0;
+  const traders = c.traders ?? 0, trades = c.trades ?? 0, seasoned = c.seasoned ?? traders;
   const spread = trades ? Math.min(1, (traders / trades) / 0.4) : 0;
-  return (traders + (c.volSol ?? 0) + (c.smart ?? 0) * 100) * spread;
+  const real = traders ? Math.min(1, (seasoned / traders) / 0.3) : 0;
+  return (seasoned + (c.smart ?? 0) * 100) * spread * real;
 }
 
 /** Worth holding at all. Limits follow the daemon's automatic entries where it has them. */
