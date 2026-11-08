@@ -277,7 +277,7 @@ async function watchSites() {
 /** A coin with no volume and no trade of ours for two hours is sold, whatever the cash: no range can make it trade. */
 async function closeDead() {
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string; symbol?: string | null; valueSol?: number | null }[] };
-  const mine = s.bots.filter(b => b.wallet === s.agentWallet && (b.valueSol ?? 0) > 0 && !ownCoins().includes(b.mint)), vol = new Map<string, number>(), now = Date.now();
+  const mine = s.bots.filter(b => b.wallet === s.agentWallet && !ownCoins().includes(b.mint)) // sold-out ones too: they held a slot for hours (5Fis49, 8 Nov), vol = new Map<string, number>(), now = Date.now();
   for (let i = 0; i < mine.length; i += 30) {
     const pairs = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${mine.slice(i, i + 30).map(b => b.mint).join(",")}`, { signal: AbortSignal.timeout(8_000) }).then(r => r.json() as Promise<{ baseToken?: { address?: string }; volume?: { h1?: number } }[]>);
     for (const p of pairs) { const k = p.baseToken?.address; if (k) vol.set(k, (vol.get(k) ?? 0) + (p.volume?.h1 ?? 0)); }
@@ -285,8 +285,9 @@ async function closeDead() {
   for (const b of mine) {
     let lastTrade: number | null = null; try { lastTrade = JSON.parse(readFileSync(resolve(dot, `target-${b.wallet}-${b.mint}.json`), "utf8")).lastTradeAtMs ?? null; } catch {}
     if (!deadCoin(vol.get(b.mint) ?? null, lastTrade, now)) continue;
-    const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "stop", wallet: b.wallet, mint: b.mint }) });
-    console.log(`${new Date().toISOString()} dead coin ${b.symbol}: $${Math.round(vol.get(b.mint) ?? 0)} hour volume, ${r.ok ? "sell-all sent" : `failed ${r.status}`}`);
+    const empty = (b.valueSol ?? 0) <= 0; // nothing to sell: "remove" frees the slot, "stop" would send a sell-all of nothing
+    const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: empty ? "remove" : "stop", wallet: b.wallet, mint: b.mint }) });
+    console.log(`${new Date().toISOString()} dead coin ${b.symbol}: $${Math.round(vol.get(b.mint) ?? 0)} hour volume, ${r.ok ? (empty ? "sold out, removed" : "sell-all sent") : `failed ${r.status}`}`);
     if (r.ok) writeFileSync(closedLowPath, JSON.stringify([...new Set([...closedLow(), b.mint])]));
   }
 }
