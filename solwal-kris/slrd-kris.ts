@@ -173,10 +173,13 @@ async function learnCoin(mint: string, symbol: string) {
   console.log(`${new Date().toISOString()} exa ${symbol}: ${facts ? `${facts.what.slice(0, 90)} | flags ${facts.flags.length}` : "nothing known"} | site ${live ? live.slice(0, 90) : "none"}`);
 }
 /** Coins he would open wait here; once the pool is ready (tui/agent-trader.ts poolReady) he opens the best one. */
-const pool = new Map<string, { mint: string; symbol: string; addedAtMs: number }>();
+// Kept on disk: a restart used to empty it and delay the next open by up to 20 minutes (8 Nov).
+const poolPath = resolve(dot, "kris-pool.json"), pool = new Map<string, { mint: string; symbol: string; addedAtMs: number }>();
+try { for (const e of JSON.parse(readFileSync(poolPath, "utf8")) as { mint: string; symbol: string; addedAtMs: number }[]) if (Date.now() - e.addedAtMs < 30 * 60_000) pool.set(e.mint, e); } catch {}
+const savePool = () => { try { writeFileSync(poolPath, JSON.stringify([...pool.values()])); } catch {} };
 let choosing = false;
 function consider(mint: string, symbol: string) {
-  if (!pool.has(mint)) pool.set(mint, { mint, symbol, addedAtMs: Date.now() });
+  if (!pool.has(mint)) { pool.set(mint, { mint, symbol, addedAtMs: Date.now() }); savePool(); }
   console.log(`${new Date().toISOString()} candidate ${symbol}: ${pool.size}/${OPEN_POOL.size} in the pool`);
   void choose();
 }
@@ -184,7 +187,7 @@ async function choose() {
   if (choosing || !poolReady([...pool.values()], Date.now())) return;
   choosing = true;
   try {
-    const seen = [...pool.values()]; pool.clear();
+    const seen = [...pool.values()]; pool.clear(); savePool();
     const weighed: Array<Awaited<ReturnType<typeof weigh>> & { mint: string; symbol: string }> = [];
     for (const c of seen) { const w = await weigh(c.mint).catch(() => null); if (w) weighed.push({ ...w, mint: c.mint, symbol: c.symbol }); }
     const ranked = rankPool(weighed);
@@ -277,7 +280,8 @@ async function watchSites() {
 /** A coin with no volume and no trade of ours for two hours is sold, whatever the cash: no range can make it trade. */
 async function closeDead() {
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string; symbol?: string | null; valueSol?: number | null }[] };
-  const mine = s.bots.filter(b => b.wallet === s.agentWallet && !ownCoins().includes(b.mint)) // sold-out ones too: they held a slot for hours (5Fis49, 8 Nov), vol = new Map<string, number>(), now = Date.now();
+  // Sold-out ones too: they held a slot for hours (5Fis49, 8 Nov).
+  const mine = s.bots.filter(b => b.wallet === s.agentWallet && !ownCoins().includes(b.mint)), vol = new Map<string, number>(), now = Date.now();
   for (let i = 0; i < mine.length; i += 30) {
     const pairs = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${mine.slice(i, i + 30).map(b => b.mint).join(",")}`, { signal: AbortSignal.timeout(8_000) }).then(r => r.json() as Promise<{ baseToken?: { address?: string }; volume?: { h1?: number } }[]>);
     for (const p of pairs) { const k = p.baseToken?.address; if (k) vol.set(k, (vol.get(k) ?? 0) + (p.volume?.h1 ?? 0)); }
