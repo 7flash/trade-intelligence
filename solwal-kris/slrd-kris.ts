@@ -5,6 +5,9 @@ import { homedir } from "node:os";
  * finds Kris busy simply has no thought.
  *   bun run slrd-kris.ts   (JSX_AI_PATH: jsx-ai entry, default ../jsx-ai/src/index.ts) */
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { handsOff } from "./tui/hands-off.ts";
+/** In hands-off mode Kris never opens, edits or closes a position: he only reads and calls out. */
+const botFetch = (url: string, init?: RequestInit) => handsOff() ? Promise.resolve(new Response(JSON.stringify({ error: "hands-off" }), { status: 409 })) : fetch(url, init);
 import { resolve } from "node:path";
 import { chatStream } from "./tui/chat-window.ts";
 import { appendFileSync } from "node:fs";
@@ -236,7 +239,7 @@ async function openOwn(mint: string, weighed?: Awaited<ReturnType<typeof weigh>>
   const w = weighed ?? await weigh(mint);
   if (w.refused !== null || !w.book?.name || !w.capUsd) return console.log(`${new Date().toISOString()} no open ${mint.slice(0, 6)}: ${w.refused}`);
   const plan = agentPlan(w.capUsd, w.size);
-  const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "add", wallet: w.book.name, mint, ...plan, by: "kris" }) });
+  const r = await botFetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "add", wallet: w.book.name, mint, ...plan, by: "kris" }) });
   if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 100)}`);
   writeFileSync(ownPath, JSON.stringify({ ...readOwn(), [mint]: Date.now() }));
   if (called.delete(mint)) writeFileSync(calledPath, JSON.stringify([...called])); // a new position gets its own callout
@@ -324,7 +327,7 @@ async function closeDead() {
     let lastTrade: number | null = null; try { lastTrade = JSON.parse(readFileSync(resolve(dot, `target-${b.wallet}-${b.mint}.json`), "utf8")).lastTradeAtMs ?? null; } catch {}
     if (!deadCoin(vol.get(b.mint) ?? null, lastTrade, now)) continue;
     const empty = (b.valueSol ?? 0) <= 0; // nothing to sell: "remove" frees the slot, "stop" would send a sell-all of nothing
-    const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: empty ? "remove" : "stop", wallet: b.wallet, mint: b.mint }) });
+    const r = await botFetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: empty ? "remove" : "stop", wallet: b.wallet, mint: b.mint }) });
     console.log(`${new Date().toISOString()} dead coin ${b.symbol}: $${Math.round(vol.get(b.mint) ?? 0)} hour volume, ${r.ok ? (empty ? "sold out, removed" : "sell-all sent") : `failed ${r.status}`}`);
     if (r.ok) writeFileSync(closedLowPath, JSON.stringify([...new Set([...closedLow(), b.mint])]));
   }
@@ -333,7 +336,7 @@ async function dropStuck() {
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string; symbol?: string | null; costSol?: number | null; valueSol?: number | null; amountRaw?: string | null; last?: string | null }[] };
   const own = readOwn(), now = Date.now();
   for (const b of s.bots.filter(x => x.wallet === s.agentWallet && !cantBuy().includes(x.mint) && neverBought(x, own[x.mint], now))) {
-    const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "remove", wallet: b.wallet, mint: b.mint }) });
+    const r = await botFetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "remove", wallet: b.wallet, mint: b.mint }) });
     console.log(`${new Date().toISOString()} dropped ${b.symbol}: never bought, ${r.ok ? "slot freed" : `remove failed ${r.status}`}`);
     if (r.ok) writeFileSync(cantBuyPath, JSON.stringify([...new Set([...cantBuy(), b.mint])]));
   }
@@ -352,7 +355,7 @@ async function closeForCash() {
     for (const p of pairs) volume.set(p.baseToken.address, (volume.get(p.baseToken.address) ?? 0) + (p.volume?.h1 ?? 0));
   }
   const b = lowestVolume(coins.map(x => ({ ...x, valueSol: x.valueSol ?? 0, hourVolumeUsd: volume.get(x.mint) ?? null }))); if (!b) return;
-  const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "stop", wallet: b.wallet, mint: b.mint }) });
+  const r = await botFetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "stop", wallet: b.wallet, mint: b.mint }) });
   console.log(`${new Date().toISOString()} cash ${cash.toFixed(3)}: closing ${b.symbol}, $${Math.round(b.hourVolumeUsd!)} hour volume, ${r.ok ? "sell-all sent" : `stop failed ${r.status}`}`);
   if (r.ok) { lastClose = Date.now(); writeFileSync(closedLowPath, JSON.stringify([...closed, b.mint])); }
 }
@@ -447,7 +450,7 @@ async function myWallet() {
   wallet = { name, sol: s.wallets?.find(w => w.name === name)?.sol ?? 0 }; walletAt = Date.now(); return wallet;
 }
 async function act(body: Record<string, unknown>) {
-  const w = await myWallet(), r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, body: JSON.stringify({ wallet: w.name, ...body }), signal: AbortSignal.timeout(10_000) });
+  const w = await myWallet(), r = await botFetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, body: JSON.stringify({ wallet: w.name, ...body }), signal: AbortSignal.timeout(10_000) });
   if (!r.ok) throw new Error(`${body.action}: ${r.status} ${(await r.text()).slice(0, 100)}`);
 }
 /** What really happened to coins like these, from the tracker. Read once every few minutes. */
