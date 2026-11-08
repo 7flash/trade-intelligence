@@ -1,7 +1,8 @@
 /** Where Kris's browser goes next on pump.fun. Only the front page, Kris's own profile, and coin pages are allowed. */
 export type TourStop = "hot" | "movers" | "callout" | "screener" | "portfolio" | "home";
 /** Coins are where he thinks, so nearly every stop is one. The front page is only passed through to pick the next. */
-export const TOUR: TourStop[] = ["hot", "movers", "callout", "screener", "hot", "movers", "callout", "screener", "portfolio"];
+// Fresh pairs with a callout are the focus (8 Nov): callouts and the screener come up three times each per tour.
+export const TOUR: TourStop[] = ["callout", "screener", "hot", "callout", "screener", "movers", "callout", "screener", "portfolio"];
 import { slotQualifies, type SlotCoin } from "./kris-slots.ts";
 const COIN = /^\/coin\/[1-9A-HJ-NP-Za-km-z]{32,44}(\?highlight_callout=[\w-]+)?$/;
 
@@ -15,9 +16,10 @@ export function pickCoin(kind: "hot" | "callout", hrefs: string[], recent: strin
 }
 
 /** From the terminal's own list of live coins: one he could really open, not looked at lately, among the busiest few so it varies. */
-export function pickScreener(coins: SlotCoin[], recent: string[], at = Math.random(), minAgeMs = 300_000, minCapUsd = 5_000) {
+export function pickScreener(coins: SlotCoin[], recent: string[], at = Math.random(), minAgeMs = 0, minCapUsd = 3_000) {
   const seen = new Set(recent), fresh = coins.filter(c => !seen.has(c.mint) && (c.ageMs ?? 0) >= minAgeMs && (c.capUsd ?? 0) >= minCapUsd && slotQualifies(c, c.migrated ? "migrated" : "new")).sort((a, b) => (b.traders ?? 0) - (a.traders ?? 0)).slice(0, 12);
-  return fresh[Math.floor(at * fresh.length)]?.mint ?? null;
+  const onCurve = fresh.filter(c => !c.migrated), from = onCurve.length ? onCurve : fresh; // fresh pairs first
+  return from[Math.floor(at * from.length)]?.mint ?? null;
 }
 
 export function remember(recent: string[], href: string, keep = 200) {

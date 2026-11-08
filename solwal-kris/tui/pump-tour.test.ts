@@ -60,7 +60,8 @@ test("the screener picks a live coin he has not looked at, among the busiest", (
   expect(pickScreener(coins, ["a", "b", "c"], 0)).toBeNull();
   expect(pickScreener([live("a", 10)], [], 0)).toBeNull(); // too few traders to qualify
   expect(pickScreener([live("a", 300, { capUsd: 2_000 })], [], 0)).toBeNull();
-  expect(pickScreener([live("a", 300, { ageMs: 120_000 })], [], 0)).toBeNull(); // too new to open, so not worth the stop
+  expect(pickScreener([live("a", 300, { ageMs: 120_000 })], [], 0)).toBe("a"); // fresh pairs: any age since 8 Nov
+  expect(pickScreener([live("m", 300, { migrated: true }), live("n", 200)], [], 0)).toBe("n"); // still on the curve first
 });
 test("he remembers enough coins to keep finding new ones", () => {
   let seen: string[] = [];
