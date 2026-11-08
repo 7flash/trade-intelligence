@@ -1,7 +1,7 @@
 /** A real browser window on pump.fun, shown on Kris's monitor. It looks around: Trending, Hot callouts and his own
  * positions, and jumps to a coin when it trades. It clicks only coin and home links, and in agent mode the
  * trade box of the coin an order names (tui/agent-orders.ts). Signing in and the Cloudflare check are left for a person. */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
 import { calloutCountOf, pickCoin, pickScreener, screenerCandidates, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, headerLinksScript, calloutsScript, calloutsMoreScript, holdersScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
@@ -91,6 +91,9 @@ async function visit(tries = 0): Promise<void> {
   // A position opened by hand: he goes and reads that coin before anything else.
   const asked = nextAsked(); askedMint = asked;
   if (asked) { noted(`/coin/${asked}`); await go(coinPage(asked)); return log(`asked to read: ${asked}`); }
+  // No touring while one of our positions waits for its callout, or a callout waits to post. A position stuck
+  // more than 10 minutes (too little held, say) stops holding the tour up.
+  if (calloutWork()) return;
   if (stop === "portfolio") return go(portfolio());
   const ov: any = await fetch(`${view}/api/overview`, { headers: { cookie: `slrd_web=${bridgeToken}` }, signal: AbortSignal.timeout(10_000) }).then(r => r.json()).catch(() => null);
   const skip = [...recent, ...(ov?.bots ?? []).map((b: any) => b.mint as string)]; // what he holds is not news
@@ -130,6 +133,15 @@ async function visit(tries = 0): Promise<void> {
 /** What this stop shows, for Kris to think about: see safeFacts for why it is only numbers and names. */
 let posted = "";
 let askedMint: string | null = null;
+let waitingLogged = 0;
+function calloutWork() {
+  let queued = 0; try { queued = readdirSync(resolve(dot, "agent-callouts")).filter(n => n.endsWith(".json") || n.endsWith(".posting")).length; } catch {}
+  let pending: { mint: string; since: number }[] = [];
+  try { const j = JSON.parse(readFileSync(resolve(dot, "kris-pending-callouts.json"), "utf8")) as { at: number; pending: { mint: string; since: number }[] }; if (Date.now() - j.at < 120_000) pending = j.pending.filter(p => Date.now() - p.since < 600_000); } catch {}
+  if (!queued && !pending.length) return false;
+  if (Date.now() - waitingLogged > 60_000) { waitingLogged = Date.now(); log(`not touring: ${queued} callout(s) to post, ${pending.length} position(s) waiting for a callout`); }
+  return true;
+}
 function nextAsked() {
   const path = resolve(dot, "kris-read-next.json");
   try { const [first, ...rest] = JSON.parse(readFileSync(path, "utf8")) as string[]; if (first) writeFileSync(path, JSON.stringify(rest)); return first ?? null; } catch { return null; }

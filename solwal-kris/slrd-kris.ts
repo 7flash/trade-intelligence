@@ -367,7 +367,12 @@ async function shotOf(mint: string) {
 /** pump.fun posts a callout only with $2 of the coin held: with the low range the first buy is smaller, so the callout waits for the second. */
 let solUsdNow: number | null = null;
 const heldValue = new Map<string, number>(), CALLOUT_MIN_SOL = 0.013 /* pump.fun asks for $1 held (its own form says so), about 0.011 SOL at $90; a little above it */, calloutRetry = new Map<string, number>();
+const calloutSince = new Map<string, number>();
 function sendCallouts() {
+  // The browser tours other coins only while no position waits for its read or callout (owner, 8 Nov).
+  for (const m of wantCallout) if (!calloutSince.has(m)) calloutSince.set(m, Date.now());
+  for (const m of [...calloutSince.keys()]) if (!wantCallout.has(m)) calloutSince.delete(m);
+  try { writeFileSync(resolve(dot, "kris-pending-callouts.json"), JSON.stringify({ at: Date.now(), pending: [...calloutSince].map(([mint, since]) => ({ mint, since })) })); } catch {}
   for (const mint of wantCallout) {
     if ((heldValue.get(mint) ?? 0) < CALLOUT_MIN_SOL) continue; // stays wanted until the bag is big enough
     if (ownCoins().includes(mint)) { wantCallout.delete(mint); continue; }
