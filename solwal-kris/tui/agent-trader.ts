@@ -188,6 +188,9 @@ export function poolReady(pool: readonly PoolEntry[], nowMs: number, p = OPEN_PO
   return pool.length >= p.size || (pool.length > 0 && nowMs - Math.min(...pool.map(e => e.addedAtMs)) >= p.waitMs);
 }
 /** Candidates weighed again at choosing time: only those still clear, biggest cap first. */
-export function rankPool<T extends { mint: string; refused: string | null; capUsd: number | null }>(weighed: readonly T[]): T[] {
-  return weighed.filter(w => w.refused === null && (w.capUsd ?? 0) > 0).sort((a, b) => (b.capUsd ?? 0) - (a.capUsd ?? 0));
+export function rankPool<T extends { mint: string; refused: string | null; capUsd: number | null; picked?: boolean }>(weighed: readonly T[]): T[] {
+  // Coins he said OPEN to come first; a coin he passed on is taken only when none of the pool got an OPEN (8 Nov: with
+  // OPEN-only pools two clear coins an hour reached the pool and nothing opened for over an hour).
+  return weighed.filter(w => w.refused === null && (w.capUsd ?? 0) > 0)
+    .sort((a, b) => Number(!!b.picked) - Number(!!a.picked) || (b.capUsd ?? 0) - (a.capUsd ?? 0));
 }

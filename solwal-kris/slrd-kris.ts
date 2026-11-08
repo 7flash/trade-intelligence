@@ -106,7 +106,7 @@ async function drainThoughts() {
         }
         const { read, callout } = splitCallout(text); text = read; if (browsing && callout) readyCallout.set(job.ev.mint, callout);
         if (browsing) console.log(`${new Date().toISOString()} verdict ${job.ev.symbol}: ${verdictOf(text) ? "OPEN" : "PASS"}, canOpen ${job.facts.canOpen}`);
-        if (browsing && verdictOf(text) && job.facts.canOpen === true) consider(job.ev.mint, job.ev.symbol ?? job.ev.mint.slice(0, 6));
+        if (browsing && job.facts.canOpen === true) consider(job.ev.mint, job.ev.symbol ?? job.ev.mint.slice(0, 6), verdictOf(text)); // every clear coin is seen; OPEN ranks first
         break;
       } catch (e) { if (attempt === 2) throw e; await Bun.sleep(1_500); }
     } catch (e) { console.log(`${new Date().toISOString()} thought failed: ${String(e).slice(0, 160)}`); if (job.ev.kind === "result" || job.ev.kind === "review" || job.ev.kind === "trade") { job.ev.thought ??= job.ev.title; save(); } } // no Codex: results still reach the history
@@ -174,13 +174,14 @@ async function learnCoin(mint: string, symbol: string) {
 }
 /** Coins he would open wait here; once the pool is ready (tui/agent-trader.ts poolReady) he opens the best one. */
 // Kept on disk: a restart used to empty it and delay the next open by up to 20 minutes (8 Nov).
-const poolPath = resolve(dot, "kris-pool.json"), pool = new Map<string, { mint: string; symbol: string; addedAtMs: number }>();
-try { for (const e of JSON.parse(readFileSync(poolPath, "utf8")) as { mint: string; symbol: string; addedAtMs: number }[]) if (Date.now() - e.addedAtMs < 30 * 60_000) pool.set(e.mint, e); } catch {}
+const poolPath = resolve(dot, "kris-pool.json"), pool = new Map<string, { mint: string; symbol: string; addedAtMs: number; picked?: boolean }>();
+try { for (const e of JSON.parse(readFileSync(poolPath, "utf8")) as { mint: string; symbol: string; addedAtMs: number; picked?: boolean }[]) if (Date.now() - e.addedAtMs < 30 * 60_000) pool.set(e.mint, e); } catch {}
 const savePool = () => { try { writeFileSync(poolPath, JSON.stringify([...pool.values()])); } catch {} };
 let choosing = false;
-function consider(mint: string, symbol: string) {
-  if (!pool.has(mint)) { pool.set(mint, { mint, symbol, addedAtMs: Date.now() }); savePool(); }
-  console.log(`${new Date().toISOString()} candidate ${symbol}: ${pool.size}/${OPEN_POOL.size} in the pool`);
+function consider(mint: string, symbol: string, picked: boolean) {
+  const had = pool.get(mint);
+  pool.set(mint, { mint, symbol, addedAtMs: had?.addedAtMs ?? Date.now(), picked: picked || !!had?.picked }); savePool();
+  console.log(`${new Date().toISOString()} candidate ${symbol}${picked ? " (OPEN)" : " (passed)"}: ${pool.size}/${OPEN_POOL.size} in the pool`);
   void choose();
 }
 async function choose() {
@@ -188,10 +189,10 @@ async function choose() {
   choosing = true;
   try {
     const seen = [...pool.values()]; pool.clear(); savePool();
-    const weighed: Array<Awaited<ReturnType<typeof weigh>> & { mint: string; symbol: string }> = [];
-    for (const c of seen) { const w = await weigh(c.mint).catch(() => null); if (w) weighed.push({ ...w, mint: c.mint, symbol: c.symbol }); }
+    const weighed: Array<Awaited<ReturnType<typeof weigh>> & { mint: string; symbol: string; picked: boolean }> = [];
+    for (const c of seen) { const w = await weigh(c.mint).catch(() => null); if (w) weighed.push({ ...w, mint: c.mint, symbol: c.symbol, picked: !!c.picked }); }
     const ranked = rankPool(weighed);
-    console.log(`${new Date().toISOString()} choosing from ${seen.length}: ${weighed.map(w => `${w.symbol} $${Math.round(w.capUsd ?? 0)}${w.refused ? ` (${w.refused})` : ""}`).join(", ")}`);
+    console.log(`${new Date().toISOString()} choosing from ${seen.length}: ${weighed.map(w => `${w.symbol}${w.picked ? "*" : ""} $${Math.round(w.capUsd ?? 0)}${w.refused ? ` (${w.refused})` : ""}`).join(", ")}`);
     if (ranked[0]) await openOwn(ranked[0].mint, ranked[0]);
   } catch (e) { console.log(`${new Date().toISOString()} open failed: ${String(e).slice(0, 120)}`); }
   finally { choosing = false; }

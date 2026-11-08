@@ -193,3 +193,13 @@ test("the pool opens after 5 candidates or 20 minutes, and picks the biggest cle
   const ranked = rankPool([{ mint: "small", refused: null, capUsd: 20_000 }, { mint: "big", refused: "falling from its high", capUsd: 900_000 }, { mint: "mid", refused: null, capUsd: 150_000 }, { mint: "none", refused: null, capUsd: null }]);
   expect(ranked.map(r => r.mint)).toEqual(["mid", "small"]);
 });
+
+test("a coin he said OPEN to beats a bigger one he passed on; passed coins still count when nothing got an OPEN", () => {
+  const ranked = rankPool([
+    { mint: "passedBig", refused: null, capUsd: 900_000, picked: false },
+    { mint: "picked", refused: null, capUsd: 50_000, picked: true },
+    { mint: "passedMid", refused: null, capUsd: 200_000, picked: false },
+  ]);
+  expect(ranked.map(r => r.mint)).toEqual(["picked", "passedBig", "passedMid"]);
+  expect(rankPool([{ mint: "p", refused: null, capUsd: 1, picked: false }]).map(r => r.mint)).toEqual(["p"]);
+});
