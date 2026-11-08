@@ -1,7 +1,7 @@
 /** What lets the agent open positions on his own: callouts turned into numbers, and the limits he cannot pass. */
 import { goodHolders, SLOT_CONFIG, slotRange } from "./kris-slots.ts";
 
-export const AGENT_LIMITS = { maxPositions: 60, maxSizeSol: 0.2, minSizeSol: 0.07, reserveSol: 0.13, openGapMs: 720_000, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs,
+export const AGENT_LIMITS = { maxPositions: 60, maxSizeSol: 0.2, minSizeSol: 0.07, reserveSol: 0.13, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs,
   /** Only rules out extremes: the reading has shown over 100%, so it is not a precise line. To check. */
   maxEarlyPct: 60,
   /** 149 tracked coins: median -19% in the first 5 minutes, -3% from 5 to 10. */
@@ -92,7 +92,6 @@ export function refuseOpen(o: { risk: CoinRisk | null; capUsd: number | null; he
   if (o.ageMs == null || o.ageMs < l.minAgeMs) return "too new";
   if (!o.callouts) return "no callouts"; // nobody has put their name on it yet
   if (o.closedAgoMs != null && o.closedAgoMs < l.reopenAfterMs) return "closed recently";
-  if (o.lastOpenAgoMs != null && o.lastOpenAgoMs < l.openGapMs) return "just opened one"; // 13 opens an hour each lost 0.017 on average and forced a sale to pay for it; he keeps opening, 5 an hour
   return null;
 }
 /** The last 30 minutes before an open. 74 closes from the last 30 hours: up 3x or more, 12 closes and none won (-0.38 SOL);
@@ -178,3 +177,17 @@ export function splitCallout(text: string) {
 /** The model ends an analysis with OPEN or PASS on its own line. */
 export const verdictOf = (text: string) => /(^|\n)\s*OPEN\s*$/.test(text);
 export const withoutVerdict = (text: string) => text.replace(/\s*\n?\s*(OPEN|OPE|OP|PASS|PAS|PA)\s*$/, "").trimEnd();
+
+/** Pacing by choice, not by a clock: coins he would open wait in a pool, and once 5 are in, or 20 minutes after the
+ * first, he opens the best one and drops the rest. Opening every good coin was 13 an hour, each losing 0.017 on average;
+ * a 12-minute gap fixed the rate but took whichever coin came first. Bigger caps held up best in 30-minute outcomes
+ * (2373 coins: $10-30k median -67%, $100k-1M about 0%), so the biggest cap is the best of the pool. */
+export const OPEN_POOL = { size: 5, waitMs: 20 * 60_000 };
+export type PoolEntry = { mint: string; addedAtMs: number };
+export function poolReady(pool: readonly PoolEntry[], nowMs: number, p = OPEN_POOL) {
+  return pool.length >= p.size || (pool.length > 0 && nowMs - Math.min(...pool.map(e => e.addedAtMs)) >= p.waitMs);
+}
+/** Candidates weighed again at choosing time: only those still clear, biggest cap first. */
+export function rankPool<T extends { mint: string; refused: string | null; capUsd: number | null }>(weighed: readonly T[]): T[] {
+  return weighed.filter(w => w.refused === null && (w.capUsd ?? 0) > 0).sort((a, b) => (b.capUsd ?? 0) - (a.capUsd ?? 0));
+}

@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import { chatStream } from "./tui/chat-window.ts";
 import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
-import { agentPlan, agentSize, chaseRefusal, lastHalfHour, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
+import { agentPlan, OPEN_POOL, poolReady, rankPool, agentSize, chaseRefusal, lastHalfHour, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
 import { coinWebsite, exaFacts, isProjectSite, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
 import { takeSiteShot } from "./tui/site-shot.ts";
@@ -106,7 +106,7 @@ async function drainThoughts() {
         }
         const { read, callout } = splitCallout(text); text = read; if (browsing && callout) readyCallout.set(job.ev.mint, callout);
         if (browsing) console.log(`${new Date().toISOString()} verdict ${job.ev.symbol}: ${verdictOf(text) ? "OPEN" : "PASS"}, canOpen ${job.facts.canOpen}`);
-        if (browsing && verdictOf(text) && job.facts.canOpen === true) void openOwn(job.ev.mint).catch(e => console.log(`${new Date().toISOString()} open failed: ${String(e).slice(0, 120)}`));
+        if (browsing && verdictOf(text) && job.facts.canOpen === true) consider(job.ev.mint, job.ev.symbol ?? job.ev.mint.slice(0, 6));
         break;
       } catch (e) { if (attempt === 2) throw e; await Bun.sleep(1_500); }
     } catch (e) { console.log(`${new Date().toISOString()} thought failed: ${String(e).slice(0, 160)}`); if (job.ev.kind === "result" || job.ev.kind === "review" || job.ev.kind === "trade") { job.ev.thought ??= job.ev.title; save(); } } // no Codex: results still reach the history
@@ -172,9 +172,31 @@ async function learnCoin(mint: string, symbol: string) {
   known.set(mint, facts || live || ownSite ? { what: facts?.what ?? "", who: facts?.who ?? "", flags: facts?.flags ?? [], siteNow: live, site: ownSite } : null);
   console.log(`${new Date().toISOString()} exa ${symbol}: ${facts ? `${facts.what.slice(0, 90)} | flags ${facts.flags.length}` : "nothing known"} | site ${live ? live.slice(0, 90) : "none"}`);
 }
+/** Coins he would open wait here; once the pool is ready (tui/agent-trader.ts poolReady) he opens the best one. */
+const pool = new Map<string, { mint: string; symbol: string; addedAtMs: number }>();
+let choosing = false;
+function consider(mint: string, symbol: string) {
+  if (!pool.has(mint)) pool.set(mint, { mint, symbol, addedAtMs: Date.now() });
+  console.log(`${new Date().toISOString()} candidate ${symbol}: ${pool.size}/${OPEN_POOL.size} in the pool`);
+  void choose();
+}
+async function choose() {
+  if (choosing || !poolReady([...pool.values()], Date.now())) return;
+  choosing = true;
+  try {
+    const seen = [...pool.values()]; pool.clear();
+    const weighed: Array<Awaited<ReturnType<typeof weigh>> & { mint: string; symbol: string }> = [];
+    for (const c of seen) { const w = await weigh(c.mint).catch(() => null); if (w) weighed.push({ ...w, mint: c.mint, symbol: c.symbol }); }
+    const ranked = rankPool(weighed);
+    console.log(`${new Date().toISOString()} choosing from ${seen.length}: ${weighed.map(w => `${w.symbol} $${Math.round(w.capUsd ?? 0)}${w.refused ? ` (${w.refused})` : ""}`).join(", ")}`);
+    if (ranked[0]) await openOwn(ranked[0].mint, ranked[0]);
+  } catch (e) { console.log(`${new Date().toISOString()} open failed: ${String(e).slice(0, 120)}`); }
+  finally { choosing = false; }
+}
+setInterval(() => void choose(), 60_000).unref?.(); // the 20-minute wait ends even when no new candidate arrives
 /** Limits are read again here: the verdict alone never spends anything. */
-async function openOwn(mint: string) {
-  const w = await weigh(mint);
+async function openOwn(mint: string, weighed?: Awaited<ReturnType<typeof weigh>>) {
+  const w = weighed ?? await weigh(mint);
   if (w.refused !== null || !w.book?.name || !w.capUsd) return console.log(`${new Date().toISOString()} no open ${mint.slice(0, 6)}: ${w.refused}`);
   const plan = agentPlan(w.capUsd, w.size);
   const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "add", wallet: w.book.name, mint, ...plan }) });

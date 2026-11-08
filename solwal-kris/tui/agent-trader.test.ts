@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { rangeLevels, targetPlan } from "../packages/core/src/runtime/target-inventory.ts";
-import { agentPlan, agentSize, backedByReads, chaseRefusal, deadCoin, splitCallout, verdictOf, zeroCount, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
+import { agentPlan, agentSize, backedByReads, chaseRefusal, deadCoin, splitCallout, verdictOf, zeroCount, neverBought, lowestVolume, flatCallout, goalLine, goalX, pickShape, useGoal, pageFacts, namesCoin, topHoldersPct, calloutSignals, calloutText, coinRisk, parseCallout, refuseOpen, poolReady, rankPool, splitCallouts, verdictOf, withoutVerdict, type CoinRisk } from "./agent-trader.ts";
 
 const held = "VALANTIS\n26m\n\nHOLY DEV\n\n>_\nAgent.exe\nPosition\n$154\nProfit\n+$230.72\n19\n8\n3,397\n$8.79K\n MC";
 const words = "VALANTIS\n12m\n\nCa on X , dev insanely bullish, this a milly\n\n1";
@@ -41,8 +41,7 @@ test("no open right after a pump, or on the way down from one", () => {
 });
 test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen(ok)).toBeNull();
-  expect(refuseOpen({ ...ok, lastOpenAgoMs: 600_000 })).toBe("just opened one");
-  expect(refuseOpen({ ...ok, lastOpenAgoMs: 720_000 })).toBeNull();
+  expect(refuseOpen({ ...ok, lastOpenAgoMs: 60_000 })).toBeNull(); // pacing is the pool's job now
   expect(refuseOpen({ ...ok, risk: null })).toBe("no bundle read");
   expect(refuseOpen({ ...ok, risk: { ...clean, bundledPct: 30 } })).toBe("bundled");
   expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 60 } })).toBe("bought early");
@@ -182,4 +181,15 @@ test("only a coin nobody trades and we have not traded for two hours is dead", (
   expect(deadCoin(50, now - 3_600_000, now)).toBe(false);
   expect(deadCoin(null, now - 7_300_000, now)).toBe(false); // no reading is not no volume
   expect(deadCoin(50, null, now)).toBe(false);
+});
+
+test("the pool opens after 5 candidates or 20 minutes, and picks the biggest clear cap", () => {
+  const e = (mint: string, addedAtMs: number) => ({ mint, addedAtMs });
+  expect(poolReady([], 0)).toBe(false);
+  expect(poolReady([e("a", 0), e("b", 0), e("c", 0), e("d", 0)], 60_000)).toBe(false);
+  expect(poolReady([e("a", 0), e("b", 0), e("c", 0), e("d", 0), e("e", 0)], 60_000)).toBe(true);
+  expect(poolReady([e("a", 0)], 20 * 60_000 - 1)).toBe(false);
+  expect(poolReady([e("a", 0)], 20 * 60_000)).toBe(true);
+  const ranked = rankPool([{ mint: "small", refused: null, capUsd: 20_000 }, { mint: "big", refused: "falling from its high", capUsd: 900_000 }, { mint: "mid", refused: null, capUsd: 150_000 }, { mint: "none", refused: null, capUsd: null }]);
+  expect(ranked.map(r => r.mint)).toEqual(["mid", "small"]);
 });
