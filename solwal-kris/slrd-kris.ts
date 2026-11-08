@@ -208,6 +208,29 @@ async function choose() {
   finally { choosing = false; }
 }
 setInterval(() => void choose(), 60_000).unref?.(); // the 20-minute wait ends even when no new candidate arrives
+/** Coins that ran without him, from the missed-runners agent (C:/Code/gxy-aa, agent 28, runners.md). He says plainly
+ * why he missed each, from his own records: when he saw it, at what cap, what he decided, or that he never saw it.
+ * One post at most every 20 minutes (owner, 8 Nov: "missed this earlier because"). */
+const missedPath = resolve(dot, "kris-missed.json"), RUNNERS = process.env.KRIS_RUNNERS ?? "C:/Code/gxy-aa/data/agents/28/work/runners.md";
+let missedPostedAt = 0;
+async function postMissed() {
+  if (Date.now() - missedPostedAt < 20 * 60_000) return;
+  let text = ""; try { text = readFileSync(RUNNERS, "utf8"); } catch { return; }
+  let done: string[] = []; try { done = JSON.parse(readFileSync(missedPath, "utf8")); } catch {}
+  const mints = [...new Set(text.match(/[1-9A-HJ-NP-Za-km-z]{32,44}pump/g) ?? [])].filter(m => !done.includes(m) && !(m in readOwn()));
+  const mint = mints[0]; if (!mint) return;
+  done.push(mint); writeFileSync(missedPath, JSON.stringify(done.slice(-500)));
+  let seen: { atMs: number; cap: number; verdict?: string; kind?: string } | null = null;
+  try { for (const l of readFileSync(resolve(dot, "kris-outcomes.jsonl"), "utf8").split("\n")) { if (!l.includes(mint)) continue; const r = JSON.parse(l); if (r.mint === mint) { seen = r; break; } } } catch {}
+  const pair = await fetch(`https://api.dexscreener.com/tokens/v1/solana/${mint}`, { signal: AbortSignal.timeout(8_000) }).then(r => r.json() as Promise<{ baseToken?: { symbol?: string }; marketCap?: number; priceChange?: { h1?: number; h6?: number } }[]>).then(ps => ps[0] ?? null).catch(() => null);
+  const symbol = pair?.baseToken?.symbol ?? mint.slice(0, 6), capNow = pair?.marketCap ?? null;
+  const why = !seen ? "never saw it: it was not on any page he tours" : seen.verdict === "skip" ? `saw it at $${Math.round(seen.cap / 1000)}k on the curve and skipped it: too small or too young for his rules then` : `saw it at $${Math.round(seen.cap / 1000)}k${seen.kind === "migrated" ? " right after migration" : ""} and only watched it`;
+  missedPostedAt = Date.now();
+  const ev = add({ atMs: Date.now(), kind: "review", mint, symbol, title: `Missed ${symbol}` });
+  if (ev) think(ev, { event: "a coin that ran while you did not hold it: say plainly that you missed it and why, in one or two short sentences, no excuses and no promises", coin: symbol, whyMissed: why, capWhenSeenUsd: seen ? Math.round(seen.cap) : null, capNowUsd: capNow ? Math.round(capNow) : null, change1hPct: pair?.priceChange?.h1 ?? null });
+  console.log(`${new Date().toISOString()} missed ${symbol}: ${why}`);
+}
+setInterval(() => void postMissed().catch(e => console.log(`missed: ${String(e).slice(0, 100)}`)), 10 * 60_000).unref?.();
 /** Limits are read again here: the verdict alone never spends anything. */
 async function openOwn(mint: string, weighed?: Awaited<ReturnType<typeof weigh>>) {
   const w = weighed ?? await weigh(mint);
