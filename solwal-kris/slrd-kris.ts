@@ -236,7 +236,7 @@ async function openOwn(mint: string, weighed?: Awaited<ReturnType<typeof weigh>>
   const w = weighed ?? await weigh(mint);
   if (w.refused !== null || !w.book?.name || !w.capUsd) return console.log(`${new Date().toISOString()} no open ${mint.slice(0, 6)}: ${w.refused}`);
   const plan = agentPlan(w.capUsd, w.size);
-  const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "add", wallet: w.book.name, mint, ...plan }) });
+  const r = await fetch(`${BRIDGE}/api/bot`, { method: "POST", headers: { "x-slrd-token": token, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000), body: JSON.stringify({ action: "add", wallet: w.book.name, mint, ...plan, by: "kris" }) });
   if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 100)}`);
   writeFileSync(ownPath, JSON.stringify({ ...readOwn(), [mint]: Date.now() }));
   if (called.delete(mint)) writeFileSync(calledPath, JSON.stringify([...called])); // a new position gets its own callout
