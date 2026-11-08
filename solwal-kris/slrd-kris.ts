@@ -338,7 +338,7 @@ async function shotOf(mint: string) {
   return out ?? undefined;
 }
 /** pump.fun posts a callout only with $2 of the coin held: with the low range the first buy is smaller, so the callout waits for the second. */
-const heldValue = new Map<string, number>(), CALLOUT_MIN_SOL = 0.0245;
+const heldValue = new Map<string, number>(), CALLOUT_MIN_SOL = 0.0245, calloutRetry = new Map<string, number>();
 function sendCallouts() {
   for (const mint of wantCallout) {
     if ((heldValue.get(mint) ?? 0) < CALLOUT_MIN_SOL) continue; // stays wanted until the bag is big enough
@@ -347,7 +347,7 @@ function sendCallouts() {
     const read = events.find(e => e.mint === mint && e.kind === "browse" && (e.thought?.length ?? 0) >= 80) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
     if (!read?.thought) continue;
     wantCallout.delete(mint);
-    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(() => "").then(async text => { called.add(mint); writeFileSync(calledPath, JSON.stringify([...called])); if (text) { const ev = add({ atMs: Date.now(), kind: "callout" as KrisEvent["kind"], mint, symbol: read.symbol, title: "Callout", thought: text }); if (ev) save(); writeCallout(import.meta.dir, { mint, text, image: await shotOf(mint) }); } else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
+    void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(e => { console.log(`${new Date().toISOString()} callout ${read.symbol}: failed, retrying later: ${String(e).slice(0, 100)}`); calloutRetry.set(mint, (calloutRetry.get(mint) ?? 0) + 1); if ((calloutRetry.get(mint) ?? 0) <= 3) wantCallout.add(mint); return null; }).then(async text => { if (text === null) return; /* a failed attempt is not a callout: it is tried again, up to 3 times */ called.add(mint); writeFileSync(calledPath, JSON.stringify([...called])); if (text) { const ev = add({ atMs: Date.now(), kind: "callout" as KrisEvent["kind"], mint, symbol: read.symbol, title: "Callout", thought: text }); if (ev) save(); writeCallout(import.meta.dir, { mint, text, image: await shotOf(mint) }); } else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
   }
 }
 /** What a trader would look at before forming a view, from the terminal's own coin API. */
@@ -500,7 +500,7 @@ for (;;) {
     for (const b of ov.bots.filter(x => !(x as { inactive?: boolean }).inactive)) {
       heldValue.set(b.mint, (b as { valueSol?: number | null }).valueSol ?? 0);
       // After a restart, a position opened in the last 2 hours and never called still gets its callout.
-      if (!seeded && !called.has(b.mint) && Date.now() - ((b as { startedAt?: number }).startedAt ?? 0) < 2 * 3_600_000) wantCallout.add(b.mint);
+      if (!seeded && !called.has(b.mint) && Date.now() - ((b as { addedAt?: number | null }).addedAt ?? 0) < 2 * 3_600_000) wantCallout.add(b.mint);
       const at = b.lastTradeAtMs ?? 0, prev = seenTrade.get(b.mint);
       if (seeded && !seenBots.has(b.mint)) { if (called.delete(b.mint)) writeFileSync(calledPath, JSON.stringify([...called])); /* every new position gets its callout, opened by him or by hand (MARS, 8 Nov, inherited an old mark) */ wantCallout.add(b.mint); const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); if (!called.has(b.mint) && !realRead(b.mint)) askRead(b.mint); }
       if (!seeded && (b.holdingSteps ?? 0) > 0) called.add(b.mint); // already bought before this started
