@@ -85,3 +85,11 @@ export const headerLinksScript = `JSON.stringify([...document.querySelectorAll('
 export const calloutFormScript = `(() => { const at = e => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }; const shown = e => e.getBoundingClientRect().width > 0; const root = [...document.querySelectorAll("[role=dialog]")].filter(shown).pop() || null; if (!root) return JSON.stringify({ dialog: false });
   const input = [...root.querySelectorAll("textarea,[contenteditable=true]")].find(shown); const buttons = [...root.querySelectorAll("button")].filter(b => shown(b) && (b.textContent || "").trim()); const send = buttons.filter(b => /^(post|share|publish|send|call|update)/i.test(b.textContent.trim())).pop();
   return JSON.stringify({ dialog: true, wide: innerWidth, high: innerHeight, words: (root.innerText || "").slice(0, 120), input: input ? at(input) : null, written: input ? (input.value ?? input.innerText ?? "").length : 0, buttons: buttons.map(b => b.textContent.trim().slice(0, 24)).slice(0, 10), send: send ? { ...at(send), text: send.textContent.trim().slice(0, 24), off: send.disabled } : null }); })()`;
+
+/** The screener's candidates in order, curve coins first (same filter as pickScreener), for a callout check before a visit. */
+export function screenerCandidates(coins: SlotCoin[], recent: string[], n = 8, minAgeMs = 0, minCapUsd = 3_000) {
+  const seen = new Set(recent), fresh = coins.filter(c => !seen.has(c.mint) && (c.ageMs ?? 0) >= minAgeMs && (c.capUsd ?? 0) >= minCapUsd && slotQualifies(c, c.migrated ? "migrated" : "new")).sort((a, b) => (b.traders ?? 0) - (a.traders ?? 0));
+  return [...fresh.filter(c => !c.migrated), ...fresh.filter(c => c.migrated)].slice(0, n).map(c => c.mint);
+}
+/** Callouts in pump.fun's mint-positions answer: positions that carry a callout. */
+export const calloutCountOf = (body: unknown) => (body as { positions?: { callout?: unknown }[] } | null)?.positions?.filter(p => p?.callout).length ?? 0;

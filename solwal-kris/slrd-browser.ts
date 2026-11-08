@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
-import { pickCoin, pickScreener, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, headerLinksScript, calloutsScript, calloutsMoreScript, holdersScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
+import { calloutCountOf, pickCoin, pickScreener, screenerCandidates, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, headerLinksScript, calloutsScript, calloutsMoreScript, holdersScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
 import { isProjectSite } from "./tui/exa-facts.ts";
 import { execution, nextCallout, nextOrder, readOrder, writeCallout, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
 import { calloutSignals, pageFacts, splitCallouts, topHoldersPct, type Callout } from "./tui/agent-trader.ts";
@@ -60,6 +60,8 @@ const root = import.meta.dir; let ordering = false, readAt = 0;
 let here = HOME, wasBlocked = false, lastTrade = 0, step = 0, recent: string[] = [];
 const STOP_MS = 26_000, portfolio = () => `https://pump.fun/profile/${execution(root).address ?? KRIS_WALLET}`;
 const value = async (expression: string) => (await cdp("Runtime.evaluate", { expression, returnByValue: true }))?.result?.value;
+const noCallout = new Map<string, number>();
+const valueAsync = async (expression: string) => (await cdp("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }))?.result?.value;
 const go = async (url: string) => { await cdp("Page.navigate", { url }); log(`looking at ${url}`); };
 /** Clicks a link already on the page, as a person would, so the site does not reload. */
 const click = (href: string) => value(`(() => { const a = [...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)}); if (!a) return false; a.scrollIntoView({ block: "center" }); a.click(); return true; })()`);
@@ -93,7 +95,20 @@ async function visit(tries = 0): Promise<void> {
   const ov: any = await fetch(`${view}/api/overview`, { headers: { cookie: `slrd_web=${bridgeToken}` }, signal: AbortSignal.timeout(10_000) }).then(r => r.json()).catch(() => null);
   const skip = [...recent, ...(ov?.bots ?? []).map((b: any) => b.mint as string)]; // what he holds is not news
   if (stop === "screener") {
-    const mint = pickScreener([...(ov?.young ?? []), ...(ov?.coins ?? [])], skip);
+    // Fresh pairs from our own trade stream, checked for callouts through pump.fun's API from inside this page (the
+    // session is already there, no page visit per coin): only one that has a callout is opened (owner, 8 Nov).
+    const pool = [...(ov?.young ?? []), ...(ov?.coins ?? [])];
+    let mint: string | null = null;
+    const now = Date.now();
+    for (const m of screenerCandidates(pool, [...skip, ...[...noCallout].filter(([, at]) => now - at < 300_000).map(([k]) => k)], 8)) {
+      const body = await valueAsync(`fetch("https://frontend-api-v3.pump.fun/mint-positions/${m}?sortBy=TOP&withThesis=true&pageSize=20", { credentials: "include" }).then(r => r.ok ? r.json() : null).catch(() => null)`);
+      const n = calloutCountOf(body);
+      if (n > 0) { mint = m; log(`screener: ${m.slice(0, 6)} has ${n} callout(s)`); break; }
+      noCallout.set(m, now); // looked again in 5 minutes: a callout may come
+      if (noCallout.size > 2000) noCallout.clear();
+      await sleep(1_200);
+    }
+    mint ??= pickScreener(pool, skip);
     if (!mint) return visit(tries + 1);
     noted(`/coin/${mint}`); await go(coinPage(mint)); return log(`screener: ${mint}`);
   }
