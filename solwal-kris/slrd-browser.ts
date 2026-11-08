@@ -199,6 +199,12 @@ async function postCallout(job: CalloutJob) {
   let open = false;
   if (job.update) { for (let i = 0; i < 8; i++) { await sleep(700); if (await tap("/^Yours/")) break; } await sleep(1_500); } // his own post sits on that tab
   for (let i = 0; i < 12 && !open; i++) { await sleep(700); open = await tap(job.update ? "/^Update callout/" : "/^Add your callout/"); } // the holder's card loads after the trade box
+  if (!open && !job.update) { // already called earlier (a log lost to a restart): his post sits on "Yours" with an update button
+    for (let i = 0; i < 6; i++) { await sleep(700); if (await tap("/^Yours/")) break; }
+    await sleep(1_500);
+    for (let i = 0; i < 6 && !open; i++) { await sleep(700); open = await tap("/^Update callout/"); }
+    if (open) log(`callout ${job.mint.slice(0, 6)}: already called, updating it`);
+  }
   if (!open) { // right after a buy the page may not know he holds it yet
     doneCallout(root, job.mint);
     if ((job.tries ?? 0) < 3) setTimeout(() => writeCallout(root, { ...job, tries: (job.tries ?? 0) + 1 }), 30_000);
