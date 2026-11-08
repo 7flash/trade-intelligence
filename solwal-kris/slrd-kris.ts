@@ -499,8 +499,10 @@ for (;;) {
     if (seeded) { thinkOnBrowsing(); sendCallouts(); }
     for (const b of ov.bots.filter(x => !(x as { inactive?: boolean }).inactive)) {
       heldValue.set(b.mint, (b as { valueSol?: number | null }).valueSol ?? 0);
+      // After a restart, a position opened in the last 2 hours and never called still gets its callout.
+      if (!seeded && !called.has(b.mint) && Date.now() - ((b as { startedAt?: number }).startedAt ?? 0) < 2 * 3_600_000) wantCallout.add(b.mint);
       const at = b.lastTradeAtMs ?? 0, prev = seenTrade.get(b.mint);
-      if (seeded && !seenBots.has(b.mint)) { if (called.delete(b.mint)) writeFileSync(calledPath, JSON.stringify([...called])); /* every new position gets its callout, opened by him or by hand (MARS, 8 Nov, inherited an old mark) */ const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); if (!called.has(b.mint) && !realRead(b.mint)) askRead(b.mint); }
+      if (seeded && !seenBots.has(b.mint)) { if (called.delete(b.mint)) writeFileSync(calledPath, JSON.stringify([...called])); /* every new position gets its callout, opened by him or by hand (MARS, 8 Nov, inherited an old mark) */ wantCallout.add(b.mint); const ev = add({ atMs: Date.now(), kind: "position", mint: b.mint, symbol: b.symbol ?? null, title: "New position", reaction: "ape" }); if (ev) void think(ev, { event: "you just opened this position", ...facts(b) }); if (!called.has(b.mint) && !realRead(b.mint)) askRead(b.mint); }
       if (!seeded && (b.holdingSteps ?? 0) > 0) called.add(b.mint); // already bought before this started
       seenBots.add(b.mint);
       if (seeded && at && at > (prev ?? 0)) {
