@@ -211,7 +211,7 @@ setInterval(() => void choose(), 60_000).unref?.(); // the 20-minute wait ends e
 /** Coins that ran without him, from the missed-runners agent (C:/Code/gxy-aa, agent 28, runners.md). He says plainly
  * why he missed each, from his own records: when he saw it, at what cap, what he decided, or that he never saw it.
  * One post at most every 20 minutes (owner, 8 Nov: "missed this earlier because"). */
-const missedPath = resolve(dot, "kris-missed.json"), RUNNERS = process.env.KRIS_RUNNERS ?? "C:/Code/gxy-aa/data/agents/28/work/runners.md";
+const missedPath = resolve(dot, "kris-missed.json"), RUNNERS = process.env.KRIS_RUNNERS ?? "C:/Code/gxy-aa/data/agents/29/work/runners.md";
 let missedPostedAt = 0;
 async function postMissed() {
   if (Date.now() - missedPostedAt < 20 * 60_000) return;
