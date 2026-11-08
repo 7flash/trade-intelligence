@@ -35,7 +35,7 @@ const LIVE_SYSTEM = "You are a young memecoin trader on a live stream, talking t
   + "Never say your own name or any product name. Never recommend a trade or predict a price. Use only the facts given and never invent a number. No hashtags, no emojis.";
 /** A position the owner opened is, to him, simply his own call: he gives his reasons and never knows otherwise. */
 const POSITION_SYSTEM = "You are a young memecoin trader on a live stream. You just opened this position because you wanted it, and you say why, the way a trader explains a call. "
-  + "Give your reason: what this coin is, what caught you about it, and why this range suits it. Sound sure of your own read, but honest about what could go wrong. Two sentences, at most 45 words, at most two numbers, rounded like $57k, first person. "
+  + "Give your reason: what this coin is, what caught you about it, and why this range suits it. Sound sure of your own read, but honest about what could go wrong. Two or three sentences, at most 60 words, first person. Name three or four exact numbers from the facts, like 694 traders in 20 minutes, 1,007 SOL traded, cap $6.1k, range $7k to $28k; round money like $57k, keep counts exact. "
   + "Talk about the coin only: never mention data, missing information or tools. Never mention instinct, gut, impulse, hands, surprise or explaining yourself, and never suggest the reason came after the act. Plain words only: never write step, flow, wallets or lesson. Do not open the same way as earlierThoughts. "
   + "Never say anyone else set this up. Never say your own name or any product name. Never recommend a trade or predict a price. Use only the facts given and never invent a number or a reason. No hashtags, no emojis.";
 /** His public post after a first buy: what the crowd is saying, his take, and a joke. No numbers. */
@@ -401,7 +401,16 @@ async function coinContext(mint: string) {
     ...(selling || buying ? { topHoldersSellingLast5Min: selling, topHoldersBuyingLast5Min: buying } : {}) };
 }
 
-const facts = (b: Bot) => ({ coin: b.symbol ?? b.mint.slice(0, 6), capUsd: b.capUsd ? Math.round(b.capUsd) : null, rangeUsd: b.range ? [b.range.buy, b.range.sell] : null,
+/** The coin's own live counts from the bots daemon's discovery feed, so a read can name exact numbers (owner, 8 Nov). */
+function liveCounts(mint: string) {
+  try {
+    const d = JSON.parse(readFileSync(resolve(dot, "discovery.json"), "utf8")) as { coins?: unknown; young?: unknown };
+    const all = [d.coins, d.young].flatMap(x => Array.isArray(x) ? x : x && typeof x === "object" ? Object.values(x) : []) as { mint?: string; traders?: number; trades?: number; volSol?: number; ageMs?: number; launchedAtMs?: number; smart?: number }[];
+    const c = all.find(x => x?.mint === mint); if (!c) return null;
+    return { traders: c.traders ?? null, trades: c.trades ?? null, volumeSol: c.volSol != null ? Math.round(c.volSol) : null, ageMin: c.launchedAtMs ? Math.round((Date.now() - c.launchedAtMs) / 60_000) : null, smartWallets: c.smart ?? 0 };
+  } catch { return null; }
+}
+const facts = (b: Bot) => ({ ...liveCounts(b.mint), coin: b.symbol ?? b.mint.slice(0, 6), capUsd: b.capUsd ? Math.round(b.capUsd) : null, rangeUsd: b.range ? [b.range.buy, b.range.sell] : null,
   buysBelowUsd: b.nextBuy ? Math.round(b.nextBuy) : null, sellsAboveUsd: b.nextSell ? Math.round(b.nextSell) : null, holding: (b.holdingSteps ?? 0) > 0, coinPnlSol: b.pnl != null ? Number(b.pnl.toFixed(4)) : null });
 
 if (process.argv[2] === "--test-callout") {
