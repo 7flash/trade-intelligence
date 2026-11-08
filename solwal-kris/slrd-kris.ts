@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import { chatStream } from "./tui/chat-window.ts";
 import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
-import { agentPlan, OPEN_POOL, poolReady, rankPool, agentSize, chaseRefusal, lastHalfHour, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
+import { agentPlan, freshSize, OPEN_POOL, poolReady, rankPool, agentSize, chaseRefusal, lastHalfHour, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
 import { coinWebsite, exaFacts, isProjectSite, linkedPost, siteNow, xHandles, xLinks, type CoinFacts } from "./tui/exa-facts.ts";
 import { takeSiteShot } from "./tui/site-shot.ts";
@@ -144,9 +144,10 @@ async function weigh(mint: string) {
   const risk = info ? coinRisk(info, bundleShare(info.recent ?? [])) : null, book = await agentBook().catch(() => null), opened = readOwn()[mint];
   // The live feed only knows recently traded coins and the page read is lost on restart: DexScreener fills the cap then.
   const dexCap = info?.capUsd ? null : await fetch(`https://api.dexscreener.com/tokens/v1/solana/${mint}`, { signal: AbortSignal.timeout(8_000) }).then(r => r.json() as Promise<{ marketCap?: number; fdv?: number }[]>).then(ps => ps.map(p => p.marketCap || p.fdv || 0).reduce((a, b) => Math.max(a, b), 0) || null).catch(() => null);
-  const lastOpen = Math.max(0, ...Object.values(readOwn())), size = book?.name ? agentSize(book.freeSol, book.mints.size) : 0, onPage = pageRead.get(mint), capUsd = info?.capUsd || dexCap || onPage?.capUsd || null /* the page read can be minutes old: CREAM opened on \$39k when it was at \$58k (8 Nov) */, ageMs = info?.launchedAtMs ? Date.now() - info.launchedAtMs : onPage?.ageMs ?? null;
+  const lastOpen = Math.max(0, ...Object.values(readOwn())), size = book?.name && agentSize(book.freeSol, book.mints.size) > 0 ? freshSize(solUsdNow) : 0 /* fresh pairs: about $2.30 each (owner, 8 Nov) */, onPage = pageRead.get(mint), capUsd = info?.capUsd || dexCap || onPage?.capUsd || null /* the page read can be minutes old: CREAM opened on \$39k when it was at \$58k (8 Nov) */, ageMs = info?.launchedAtMs ? Date.now() - info.launchedAtMs : onPage?.ageMs ?? null;
   if (cantBuy().includes(mint)) return { risk, capUsd, size, book, refused: "cannot buy it" };
-  if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" }; // he never trades or calls out the project's own token
+  if (ownCoins().includes(mint)) return { risk, capUsd, size, book, refused: "our own coin" };
+  if ((info as { migrated?: boolean } | null)?.migrated) return { risk, capUsd, size, book, refused: "not a fresh pair" }; // only coins still on the pump.fun curve (owner, 8 Nov) // he never trades or calls out the project's own token
   const limits = existsSync(autoPath) ? refuseOpen({ risk, capUsd, held: !!book?.mints.has(mint), closedAgoMs: opened ? Date.now() - opened : null, lastOpenAgoMs: lastOpen ? Date.now() - lastOpen : null, size, ageMs, callouts: calloutCount.get(mint) ?? 0, top10HeldPct: heldTop.get(mint) ?? null }) : "off";
   const refused = limits ?? chaseRefusal(await lastHalfHour(mint).catch(() => null)); // asked last: two outside calls, only for a coin that passed everything else
   return { risk, capUsd, size, book, refused };
@@ -341,7 +342,8 @@ async function shotOf(mint: string) {
   return out ?? undefined;
 }
 /** pump.fun posts a callout only with $2 of the coin held: with the low range the first buy is smaller, so the callout waits for the second. */
-const heldValue = new Map<string, number>(), CALLOUT_MIN_SOL = 0.0245, calloutRetry = new Map<string, number>();
+let solUsdNow: number | null = null;
+const heldValue = new Map<string, number>(), CALLOUT_MIN_SOL = 0.022 /* about $2 at $90 SOL: the $2.30 fresh-pair bag passes */, calloutRetry = new Map<string, number>();
 function sendCallouts() {
   for (const mint of wantCallout) {
     if ((heldValue.get(mint) ?? 0) < CALLOUT_MIN_SOL) continue; // stays wanted until the bag is big enough
@@ -500,6 +502,7 @@ for (;;) {
     const r = await fetch("http://127.0.0.1:5176/api/overview", { headers: { cookie: `slrd_web=${token}` }, signal: AbortSignal.timeout(15_000) });
     if (!r.ok) throw new Error(`overview ${r.status}`);
     const ov = await r.json() as { bots: Bot[]; decisions?: Decision[]; coins?: Coin[]; young?: Coin[]; closedRows?: Closed[] }, decisions = ov.decisions ?? [];
+    solUsdNow = (ov as { solUsd?: number }).solUsd ?? solUsdNow;
     results = trackRecord(ov.closedRows ?? []);
     reviewClosed(ov.closedRows ?? [], seeded);
     if (seeded) { thinkOnBrowsing(); sendCallouts(); }

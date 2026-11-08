@@ -1,11 +1,12 @@
 /** What lets the agent open positions on his own: callouts turned into numbers, and the limits he cannot pass. */
 import { goodHolders, SLOT_CONFIG, slotRange } from "./kris-slots.ts";
 
-export const AGENT_LIMITS = { maxPositions: 60, maxSizeSol: 0.2, minSizeSol: 0.07, reserveSol: 0.13, maxSteps: 6, minCapUsd: 5_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs,
+export const AGENT_LIMITS = { maxPositions: 60, maxSizeSol: 0.2, minSizeSol: 0.07, reserveSol: 0.13, maxSteps: 6, minCapUsd: 3_000, stepMinSol: 0.012, reopenAfterMs: SLOT_CONFIG.reopenAfterMs,
   /** Only rules out extremes: the reading has shown over 100%, so it is not a precise line. To check. */
   maxEarlyPct: 60,
   /** 149 tracked coins: median -19% in the first 5 minutes, -3% from 5 to 10. */
-  minAgeMs: 300_000,
+  /** 0 since 8 Nov: fresh pairs are the focus, the runners (GATOGLITCH, HABIBI) made their move in the first minutes. */
+  minAgeMs: 0,
   /** A coin our tracker never followed has no launch reading: fine once it has outlived its launch. */
   unknownEarlyAgeMs: 1_800_000,
   /** SOLMOURN, a rug, had 40%; clean coins read so far sit between 2% and 17%. A few examples, not yet a study. */
@@ -117,7 +118,10 @@ export async function lastHalfHour(mint: string) {
 /** The range rule he already had. Each step stays over $1, because a callout needs that much of the coin held. */
 /** The range starts low: coins he opens fall hard first (2373 seen: median -67% in 30 minutes at $10k-$100k).
  * Replayed on his 31 closed opens of Nov 6-8: 0.6x-1.9x even steps -0.48 SOL, 0.25x-1.5x percent steps -0.03 (better in both halves). */
-export const AGENT_RANGE = { low: 0.25, high: 1.5 };
+/** Fresh pairs (owner, 8 Nov): about $2 per coin, 2 steps over a 3x range around the cap at open. */
+export const AGENT_RANGE = { low: 0.6, high: 1.8 };
+export const FRESH_USD = 2.3; // pump.fun posts a callout only with $2 held; 2.3 stays above it after fees
+export const freshSize = (solUsd: number | null | undefined) => solUsd && solUsd > 0 ? Math.round(FRESH_USD / solUsd * 1e4) / 1e4 : 0.026;
 const roundTwo = (v: number) => { const m = 10 ** (Math.floor(Math.log10(v)) - 1); return Math.round(v / m) * m; };
 export function agentPlan(capUsd: number, size: number, l = AGENT_LIMITS) {
   const buy = roundTwo(capUsd * AGENT_RANGE.low), sell = roundTwo(capUsd * AGENT_RANGE.high);

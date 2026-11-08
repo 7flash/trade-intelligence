@@ -46,7 +46,7 @@ test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen({ ...ok, risk: { ...clean, bundledPct: 30 } })).toBe("bundled");
   expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 60 } })).toBe("bought early");
   expect(refuseOpen({ ...ok, risk: { ...clean, earlyBoughtPct: 45 } })).toBeNull();
-  expect(refuseOpen({ ...ok, ageMs: 276_000 })).toBe("too new"); // bought 4m36s after launch
+  expect(refuseOpen({ ...ok, ageMs: 276_000 })).toBeNull(); // fresh pairs: no minimum age since 8 Nov
   expect(refuseOpen({ ...ok, ageMs: null })).toBe("too new");
   expect(refuseOpen({ ...ok, callouts: 0 })).toBe("no callouts");
   expect(refuseOpen({ ...ok, risk: { ...clean, devFunded: 50 } })).toBe("dev funded wallets"); // the SOLMOURN rug
@@ -54,7 +54,8 @@ test("the limits are his, whatever the verdict says", () => {
   expect(refuseOpen({ ...ok, top10HeldPct: null })).toBe("no holder read");
   expect(refuseOpen({ ...ok, held: true })).toBe("already held");
   expect(refuseOpen({ ...ok, size: 0 })).toBe("no slot or no SOL");
-  expect(refuseOpen({ ...ok, capUsd: 3_000 })).toBe("cap too small");
+  expect(refuseOpen({ ...ok, capUsd: 2_900 })).toBe("cap too small");
+  expect(refuseOpen({ ...ok, capUsd: 3_000 })).toBeNull();
   expect(refuseOpen({ ...ok, closedAgoMs: 60_000 })).toBe("closed recently");
 });
 test("wallets the creator funded count, from clusters or transfers", () => {
@@ -70,7 +71,7 @@ test("a coin we never tracked is unread, not guilty", () => {
   expect(refuseOpen({ ...unread, ageMs: 600_000 })).toBe("no early read on a young coin");
 });
 test("a range around the cap, in steps the size can really send", () => {
-  expect(agentPlan(50_000, 0.05)).toMatchObject({ buy: 13_000, sell: 75_000, steps: 4, budget: 0.05, percentSteps: true }); // 12_500 rounds to two digits
+  expect(agentPlan(50_000, 0.05)).toMatchObject({ buy: 30_000, sell: 90_000, steps: 4, budget: 0.05, percentSteps: true }); // fresh pairs: 0.6x-1.8x
   expect(agentPlan(50_000, 0.2).steps).toBe(6);
   const p = agentPlan(50_000, 0.025); expect(p.steps).toBe(2); expect(p.budget / p.steps).toBeGreaterThanOrEqual(0.012);
 });
