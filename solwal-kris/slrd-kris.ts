@@ -11,7 +11,7 @@ import { appendFileSync } from "node:fs";
 import { bundleShare, type BuyRow } from "./tui/bundles.ts";
 import { agentPlan, OPEN_POOL, poolReady, rankPool, agentSize, chaseRefusal, lastHalfHour, CALLOUT_SHAPES, calloutText, coinRisk, backedByReads, AGENT_LIMITS, deadCoin, flatCallout, splitCallout, zeroCount, goalLine, goalX, lowestVolume, namesCoin, neverBought, pickShape, useGoal, type CalloutShape, refuseOpen, verdictOf, withoutVerdict } from "./tui/agent-trader.ts";
 import { writeCallout } from "./tui/agent-orders.ts";
-import { coinWebsite, exaFacts, isProjectSite, siteNow, type CoinFacts } from "./tui/exa-facts.ts";
+import { coinWebsite, exaFacts, isProjectSite, linkedPost, siteNow, xHandles, xLinks, type CoinFacts } from "./tui/exa-facts.ts";
 import { takeSiteShot } from "./tui/site-shot.ts";
 import { startOutcome, stepOutcome, type Outcome } from "./tui/kris-outcomes.ts";
 import { freshMigration, goodHolders, planSlots, slotPlan, slotKeepsRange, slotSize, slotQualifies, SLOT_CONFIG, type Slot, type SlotCoin, type SlotKind } from "./tui/kris-slots.ts";
@@ -167,11 +167,14 @@ const known = new Map<string, CoinFacts | null>();
 async function learnCoin(mint: string, symbol: string) {
   if (known.has(mint)) return;
   const key = (() => { try { return readFileSync(resolve(dot, "exa-key"), "utf8").trim(); } catch { return ""; } })(); if (!key) return;
-  const facts = await exaFacts(mint, symbol, key).catch(e => { console.log(`${new Date().toISOString()} exa ${symbol}: ${String(e).slice(0, 100)}`); return null; });
   const urls = (() => { try { return [...readFileSync(resolve(homedir(), ".solard", "rpc.json"), "utf8").matchAll(/https:\/\/[^"\s]*helius[^"\s]*/g)].map(m => m[0]); } catch { return []; } })();
-  const site = pageRead.get(mint)?.site ?? await coinWebsite(mint, urls).catch(() => null), live = site ? await siteNow(site, key).catch(e => { console.log(`${new Date().toISOString()} site ${symbol}: ${String(e).slice(0, 100)}`); return null; }) : null;
+  const meta = await coinWebsite(mint, urls).catch(() => null); /* also reads the coin's X account for the post search */
+  const site = pageRead.get(mint)?.site ?? meta, live = site ? await siteNow(site, key).catch(e => { console.log(`${new Date().toISOString()} site ${symbol}: ${String(e).slice(0, 100)}`); return null; }) : null;
+  const facts = await exaFacts(mint, symbol, key, fetch, xHandles.get(mint)).catch(e => { console.log(`${new Date().toISOString()} exa ${symbol}: ${String(e).slice(0, 100)}`); return null; });
   const ownSite = isProjectSite(site) ? site : null; // the picture does not depend on the reader having managed the page
-  known.set(mint, facts || live || ownSite ? { what: facts?.what ?? "", who: facts?.who ?? "", flags: facts?.flags ?? [], siteNow: live, site: ownSite } : null);
+  const xPost = xLinks.get(mint) ? await linkedPost(xLinks.get(mint)!).catch(() => null) : null;
+  if (xPost) console.log(`${new Date().toISOString()} x ${symbol}: ${xPost.slice(0, 160)}`);
+  known.set(mint, facts || live || ownSite || xPost ? { what: facts?.what ?? "", who: facts?.who ?? "", flags: facts?.flags ?? [], siteNow: live, site: ownSite, xPost } : null);
   console.log(`${new Date().toISOString()} exa ${symbol}: ${facts ? `${facts.what.slice(0, 90)} | flags ${facts.flags.length}` : "nothing known"} | site ${live ? live.slice(0, 90) : "none"}`);
 }
 /** Coins he would open wait here; once the pool is ready (tui/agent-trader.ts poolReady) he opens the best one. */
