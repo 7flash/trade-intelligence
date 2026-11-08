@@ -32,7 +32,7 @@ const recentChats = () => readdirSync(files).filter(f => /^[0-9a-f]{8}-.*\.jsonl
 
 /** ChatGPT folds a long message, so the bridge may fail to recognise a prompt that did go through: the chat it landed in still has the reply. */
 function chatNow(file: string, prompt: string) {
-  try { return boundChat(rows(file)); } catch (e) { if (!/Send was clicked/.test(String(e))) throw e; return chatOfPrompt(prompt, recentChats()); }
+  try { return boundChat(rows(file)); } catch (e) { if (!/Send was clicked|Timed out|uncertain|not confirmed/i.test(String(e))) throw e; return chatOfPrompt(prompt, recentChats()); }
 }
 /** One retry, in a fresh window, when the prompt never landed (owner, 8 Nov: "in case if send fails just try again"). */
 export async function askChat(prompt: string, timeoutMs = 120_000, image?: string) {
