@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { KRIS_WALLET } from "./tui/kris-public.ts";
 import { calloutCountOf, pickCoin, pickScreener, screenerCandidates, refuseMain, remember, safeFacts, safeName, TOUR, afterPressScript, buttonScript, calloutFormScript, headerLinksScript, calloutsScript, calloutsMoreScript, holdersScript, tradeBoxScript, trendingRow, type TourStop, type TradeBox } from "./tui/pump-tour.ts";
 import { isProjectSite } from "./tui/exa-facts.ts";
-import { execution, nextCallout, nextOrder, readOrder, writeCallout, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
+import { doneCallout, execution, failCallout, nextCallout, nextOrder, requeueClaimedCallouts, readOrder, writeCallout, writeOrder, type AgentOrder, type CalloutJob } from "./tui/agent-orders.ts";
 import { calloutSignals, pageFacts, splitCallouts, topHoldersPct, type Callout } from "./tui/agent-trader.ts";
 
 const dot = resolve(import.meta.dir, ".range-bots"), token = readFileSync(resolve(dot, "public-token"), "utf8").trim();
@@ -193,29 +193,34 @@ async function headerSite() {
   try { return (JSON.parse(await value(headerLinksScript) ?? "[]") as unknown[]).find(isProjectSite) ?? null; } catch { return null; }
 }
 async function postCallout(job: CalloutJob) {
-  const url = coinPage(job.mint); if (url === HOME) return;
+  const url = coinPage(job.mint); if (url === HOME) { doneCallout(root, job.mint); return; }
   await go(url);
   for (let i = 0; i < 24; i++) { await sleep(500); if ((await value("location.pathname")) === `/coin/${job.mint}` && await readBox()) break; }
   let open = false;
   if (job.update) { for (let i = 0; i < 8; i++) { await sleep(700); if (await tap("/^Yours/")) break; } await sleep(1_500); } // his own post sits on that tab
   for (let i = 0; i < 12 && !open; i++) { await sleep(700); open = await tap(job.update ? "/^Update callout/" : "/^Add your callout/"); } // the holder's card loads after the trade box
   if (!open) { // right after a buy the page may not know he holds it yet
+    doneCallout(root, job.mint);
     if ((job.tries ?? 0) < 3) setTimeout(() => writeCallout(root, { ...job, tries: (job.tries ?? 0) + 1 }), 30_000);
     return log(`callout ${job.mint.slice(0, 6)}: no button, try ${(job.tries ?? 0) + 1}`);
   }
   let form: any = null;
   for (let i = 0; i < 12 && !form?.input; i++) { await sleep(500); form = JSON.parse(await value(calloutFormScript) ?? "null"); } // the box takes a moment to open
   log(`callout form: ${JSON.stringify(form).slice(0, 300)}`);
-  if (!form?.input) { await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); return log(`callout ${job.mint.slice(0, 6)}: no box`); }
+  if (!form?.input) { await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); failCallout(root, job); return log(`callout ${job.mint.slice(0, 6)}: no box`); }
   await realClick(form.input, form);
   await cdp("Input.insertText", { text: job.text }); await sleep(700);
   if (job.image) log(`callout ${job.mint.slice(0, 6)}: picture ${await attachImage(job.image) ? "attached" : "not attached"}`);
   form = JSON.parse(await value(calloutFormScript) ?? "null");
   log(`callout filled: ${JSON.stringify(form).slice(0, 300)}`);
-  if (job.dry || !form?.send || form.send.off || form.written < 5) { await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); return log(`callout ${job.mint.slice(0, 6)}: ${job.dry ? "dry, not posted" : "no send button"}`); }
+  if (job.dry || !form?.send || form.send.off || form.written < 5) { if (job.dry) doneCallout(root, job.mint); else failCallout(root, job); await cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }); return log(`callout ${job.mint.slice(0, 6)}: ${job.dry ? "dry, not posted" : "no send button"}`); }
   await realClick(form.send, form);
   log(`callout posted on ${job.mint.slice(0, 6)}: ${job.text}`); await sleep(3_000);
-  log(`after callout: ${await value(afterPressScript) ?? ""}`);
+  const after = await value(afterPressScript) ?? "";
+  log(`after callout: ${after}`);
+  // Only pump.fun's own notice counts as posted; anything else goes back in the queue.
+  if (/Callout (posted|updated)/i.test(after)) doneCallout(root, job.mint);
+  else { log(`callout ${job.mint.slice(0, 6)}: no confirmation, queued again`); failCallout(root, job); }
 }
 const readBox = async () => JSON.parse(await value(tradeBoxScript) ?? "null") as TradeBox | null;
 /** Opens the coin and fills in the trade box. The main button is pressed only if every check passes. */
@@ -250,6 +255,7 @@ async function pressOrder(o: AgentOrder) {
   // Stays on the coin while the trade lands, and notes what the site says. This goes to the log only.
   for (const wait of [1_000, 2_000, 3_000, 6_000]) { await sleep(wait); log(`after press: ${await value(afterPressScript) ?? ""}`); }
 }
+log(`callouts left half-posted, queued again: ${requeueClaimedCallouts(root)}`);
 setInterval(async () => {
   if (ordering || wasBlocked) return;
   const o = nextOrder(root);
@@ -260,7 +266,7 @@ setInterval(async () => {
   }
   const job = nextCallout(root); if (!job) return;
   ordering = true;
-  await postCallout(job).catch(e => log(`callout: ${String(e).slice(0, 80)}`)).finally(() => { ordering = false; });
+  await postCallout(job).catch(e => { log(`callout: ${String(e).slice(0, 80)}`); failCallout(root, job); }).finally(() => { ordering = false; });
 }, 1_000);
 /** He stays on a coin until his analysis of it is written, at most 45s. */
 const analysing = () => { if (!readAt || Date.now() - readAt > 45_000) return false; try { return JSON.parse(readFileSync(resolve(dot, "kris-analysed.json"), "utf8")).at !== readAt; } catch { return true; } };

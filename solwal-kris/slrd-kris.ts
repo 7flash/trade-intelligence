@@ -366,7 +366,7 @@ async function shotOf(mint: string) {
 }
 /** pump.fun posts a callout only with $2 of the coin held: with the low range the first buy is smaller, so the callout waits for the second. */
 let solUsdNow: number | null = null;
-const heldValue = new Map<string, number>(), CALLOUT_MIN_SOL = 0.022 /* about $2 at $90 SOL: the $2.30 fresh-pair bag passes */, calloutRetry = new Map<string, number>();
+const heldValue = new Map<string, number>(), CALLOUT_MIN_SOL = 0.013 /* pump.fun asks for $1 held (its own form says so), about 0.011 SOL at $90; a little above it */, calloutRetry = new Map<string, number>();
 function sendCallouts() {
   for (const mint of wantCallout) {
     if ((heldValue.get(mint) ?? 0) < CALLOUT_MIN_SOL) continue; // stays wanted until the bag is big enough

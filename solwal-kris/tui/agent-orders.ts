@@ -45,10 +45,26 @@ export function orderDesk(root: string, address: string, keyless = false): Order
 export type CalloutJob = { mint: string; text: string; dry?: boolean; tries?: number; image?: string; update?: boolean };
 const calloutDir = (root: string) => join(root, ".range-bots", "agent-callouts");
 export function writeCallout(root: string, job: CalloutJob) { mkdirSync(calloutDir(root), { recursive: true }); const p = join(calloutDir(root), `${job.mint}.json`); writeFileSync(`${p}.tmp`, JSON.stringify(job)); renameSync(`${p}.tmp`, p); }
+/** The next callout, kept on disk as <mint>.posting until pump.fun confirms it: a restart or a failed post used to lose it
+ * (GUS, TAOLF, CREAM, CAT on 8 Nov showed in his chat and never reached pump.fun). */
 export function nextCallout(root: string): CalloutJob | null {
   let names: string[] = []; try { names = readdirSync(calloutDir(root)).filter(n => n.endsWith(".json")); } catch { return null; }
   const name = names[0]; if (!name) return null;
-  const p = join(calloutDir(root), name); try { const job = JSON.parse(readFileSync(p, "utf8")) as CalloutJob; rmSync(p, { force: true }); return job; } catch { rmSync(p, { force: true }); return null; }
+  const p = join(calloutDir(root), name), claimed = p.replace(/\.json$/, ".posting");
+  try { const job = JSON.parse(readFileSync(p, "utf8")) as CalloutJob; renameSync(p, claimed); return job; } catch { rmSync(p, { force: true }); return null; }
+}
+/** pump.fun confirmed it: the callout is done. */
+export function doneCallout(root: string, mint: string) { rmSync(join(calloutDir(root), `${mint}.posting`), { force: true }); }
+/** Not confirmed: queued again, at most 4 tries in all. */
+export function failCallout(root: string, job: CalloutJob) {
+  doneCallout(root, job.mint);
+  if ((job.tries ?? 0) < 3) writeCallout(root, { ...job, tries: (job.tries ?? 0) + 1 });
+}
+/** At start: callouts left half-posted by a restart go back in the queue. */
+export function requeueClaimedCallouts(root: string) {
+  let names: string[] = []; try { names = readdirSync(calloutDir(root)).filter(n => n.endsWith(".posting")); } catch { return 0; }
+  for (const n of names) { const p = join(calloutDir(root), n); try { renameSync(p, p.replace(/\.posting$/, ".json")); } catch {} }
+  return names.length;
 }
 
 export type OrderResult = { result: "filled" | "not-pressed" | "no-fill"; note: string };
