@@ -182,7 +182,7 @@ export const withoutVerdict = (text: string) => text.replace(/\s*\n?\s*(OPEN|OPE
  * first, he opens the best one and drops the rest. Opening every good coin was 13 an hour, each losing 0.017 on average;
  * a 12-minute gap fixed the rate but took whichever coin came first. Bigger caps held up best in 30-minute outcomes
  * (2373 coins: $10-30k median -67%, $100k-1M about 0%), so the biggest cap is the best of the pool. */
-export const OPEN_POOL = { size: 5, waitMs: 20 * 60_000 };
+export const OPEN_POOL = { size: 3, waitMs: 10 * 60_000 }; // 5 and 20 min left good coins waiting with nothing opening (8 Nov)
 export type PoolEntry = { mint: string; addedAtMs: number };
 export function poolReady(pool: readonly PoolEntry[], nowMs: number, p = OPEN_POOL) {
   return pool.length >= p.size || (pool.length > 0 && nowMs - Math.min(...pool.map(e => e.addedAtMs)) >= p.waitMs);

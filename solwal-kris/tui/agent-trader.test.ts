@@ -186,10 +186,10 @@ test("only a coin nobody trades and we have not traded for two hours is dead", (
 test("the pool opens after 5 candidates or 20 minutes, and picks the biggest clear cap", () => {
   const e = (mint: string, addedAtMs: number) => ({ mint, addedAtMs });
   expect(poolReady([], 0)).toBe(false);
-  expect(poolReady([e("a", 0), e("b", 0), e("c", 0), e("d", 0)], 60_000)).toBe(false);
-  expect(poolReady([e("a", 0), e("b", 0), e("c", 0), e("d", 0), e("e", 0)], 60_000)).toBe(true);
-  expect(poolReady([e("a", 0)], 20 * 60_000 - 1)).toBe(false);
-  expect(poolReady([e("a", 0)], 20 * 60_000)).toBe(true);
+  expect(poolReady([e("a", 0), e("b", 0)], 60_000)).toBe(false);
+  expect(poolReady([e("a", 0), e("b", 0), e("c", 0)], 60_000)).toBe(true);
+  expect(poolReady([e("a", 0)], 10 * 60_000 - 1)).toBe(false);
+  expect(poolReady([e("a", 0)], 10 * 60_000)).toBe(true);
   const ranked = rankPool([{ mint: "small", refused: null, capUsd: 20_000 }, { mint: "big", refused: "falling from its high", capUsd: 900_000 }, { mint: "mid", refused: null, capUsd: 150_000 }, { mint: "none", refused: null, capUsd: null }]);
   expect(ranked.map(r => r.mint)).toEqual(["mid", "small"]);
 });
