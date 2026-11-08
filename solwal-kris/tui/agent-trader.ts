@@ -141,8 +141,8 @@ export const useGoal = (at = Math.random()) => at < 0.4;
 export const CALLOUT_SHAPES = {
   number: "Lead with one live number from siteNow and what it tells you, in plain words.",
   observation: "Say what the coin does and what people here are doing with it, then the one thing your bet hangs on.",
-  question: "Ask the chat the one sharp question that decides this coin, then answer it yourself in a few words.",
-  contrast: "Set what the chat is talking about against what is actually there, in one or two short sentences.",
+  question: "Ask the traders reading this, as you, the one sharp question that decides this coin, then answer it yourself in a few words.",
+  contrast: "Talk to the traders directly (you, most of you): what they are treating it as, against what is actually there, and what that means if it holds. Never say chat or people here.",
   next: "Say the next concrete thing that has to happen for this coin and why you are here before it.",
   punch: "One sentence, at most fourteen words, naming the single thing that makes this coin worth holding.",
   joke: "A dry joke that also tells the reader what this coin really is.",
