@@ -97,13 +97,13 @@ async function visit(tries = 0): Promise<void> {
     if (!mint) return visit(tries + 1);
     noted(`/coin/${mint}`); await go(coinPage(mint)); return log(`screener: ${mint}`);
   }
-  if (stop === "hot" || stop === "movers") { // Trending and Movers are tabs on the front page
+  if (stop === "hot" || stop === "movers" || stop === "new") { // Trending, Movers and New are tabs on the front page
     if (new URL(here).pathname !== "/") { if (!(await click("/"))) await go(HOME); await sleep(2_500); }
-    const tab = stop === "movers" ? "Movers" : "Trending";
+    const tab = stop === "movers" ? "Movers" : stop === "new" ? "New" : "Trending";
     await value(`[...document.querySelectorAll("button,[role=tab]")].find(b => (b.textContent || "").trim() === ${JSON.stringify(tab)})?.click()`); await sleep(1_500);
   }
   const hrefs = JSON.parse(await value(`JSON.stringify([...document.querySelectorAll("a[href]")].map(a => a.getAttribute("href")))`) ?? "[]") as string[];
-  const href = pickCoin(stop === "movers" ? "hot" : stop, hrefs, skip);
+  const href = pickCoin(stop === "movers" || stop === "new" ? "hot" : stop, hrefs, skip);
   if (!href) return visit(tries + 1);
   noted(href);
   posted = stop === "callout" ? await value(`(() => { let e = [...document.querySelectorAll("a[href]")].find(x => x.getAttribute("href") === ${JSON.stringify(href)}); while (e && e.innerText.length < 80) e = e.parentElement; return e ? e.innerText : ""; })()`) ?? "" : "";
