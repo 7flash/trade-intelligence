@@ -346,6 +346,9 @@ function sendCallouts() {
     if (Date.now() - (pendingRead.get(mint) ?? 0) < 180_000) continue; // his read of it is on the way
     const read = events.find(e => e.mint === mint && e.kind === "browse" && (e.thought?.length ?? 0) >= 80) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
     if (!read?.thought) continue;
+    // What the coin is (X posts, its site) is looked up before every callout, not only for coins he chose: a coin
+    // opened by hand (MARS, 8 Nov) went out with no story and the model said SKIP.
+    if (!known.has(mint)) { wantCallout.delete(mint); void learnCoin(mint, read.symbol ?? mint.slice(0, 6)).finally(() => wantCallout.add(mint)); continue; }
     wantCallout.delete(mint);
     void composeCallout(read.symbol, read.thought, callerTalk.get(mint) ?? [], mint).catch(e => { console.log(`${new Date().toISOString()} callout ${read.symbol}: failed, retrying later: ${String(e).slice(0, 100)}`); calloutRetry.set(mint, (calloutRetry.get(mint) ?? 0) + 1); if ((calloutRetry.get(mint) ?? 0) <= 3) wantCallout.add(mint); return null; }).then(async text => { if (text === null) return; /* a failed attempt is not a callout: it is tried again, up to 3 times */ called.add(mint); writeFileSync(calledPath, JSON.stringify([...called])); if (text) { const ev = add({ atMs: Date.now(), kind: "callout" as KrisEvent["kind"], mint, symbol: read.symbol, title: "Callout", thought: text }); if (ev) save(); writeCallout(import.meta.dir, { mint, text, image: await shotOf(mint) }); } else console.log(`${new Date().toISOString()} no callout for ${read.symbol}: nothing real to say`); });
   }
