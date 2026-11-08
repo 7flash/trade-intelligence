@@ -34,7 +34,16 @@ const recentChats = () => readdirSync(files).filter(f => /^[0-9a-f]{8}-.*\.jsonl
 function chatNow(file: string, prompt: string) {
   try { return boundChat(rows(file)); } catch (e) { if (!/Send was clicked/.test(String(e))) throw e; return chatOfPrompt(prompt, recentChats()); }
 }
+/** One retry, in a fresh window, when the prompt never landed (owner, 8 Nov: "in case if send fails just try again"). */
 export async function askChat(prompt: string, timeoutMs = 120_000, image?: string) {
+  try { return await askChatOnce(prompt, timeoutMs, image); }
+  catch (e) {
+    if (!/composer not found|prompt not confirmed/i.test(String(e))) throw e;
+    await Bun.sleep(15_000);
+    return askChatOnce(prompt, timeoutMs, image);
+  }
+}
+async function askChatOnce(prompt: string, timeoutMs = 120_000, image?: string) {
   const file = (await bridge("new", "--hidden")).split("\n").pop()!, id = file.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, ""), askFile = resolve(import.meta.dir, "..", ".range-bots", "chat", `${id}.txt`), end = Date.now() + timeoutMs;
   let chat: string | null = null;
   try {
