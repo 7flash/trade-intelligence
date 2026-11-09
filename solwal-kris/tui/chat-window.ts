@@ -1,3 +1,4 @@
+import { askCodex } from "./codex-ask.ts";
 /** One question to ChatGPT in its own small window, through the conversation files of chatgpt-bridge. The window is closed
  * after the reply. A browser window cannot read this machine's files, unlike the Codex runtime. */
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -37,6 +38,9 @@ function chatNow(file: string, prompt: string) {
 }
 /** One retry, in a fresh window, when the prompt never landed (owner, 8 Nov: "in case if send fails just try again"). */
 export async function askChat(prompt: string, timeoutMs = 120_000, image?: string) {
+  // Codex first when it is available (tui/codex-ask.ts, owner 10 Nov); the ChatGPT window otherwise.
+  const viaCodex = await askCodex(prompt, Math.max(timeoutMs, 120_000), image);
+  if (viaCodex?.trim()) return viaCodex;
   // Every request starts with its own id (10 Nov): agent prompts share long templated starts and ends, so a recovered
   // "uncertain" send matched an older chat and took its reply. With a unique first line no two requests can match.
   prompt = `Request ${crypto.randomUUID().slice(0, 8)}.
