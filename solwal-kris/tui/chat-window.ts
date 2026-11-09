@@ -37,6 +37,11 @@ function chatNow(file: string, prompt: string) {
 }
 /** One retry, in a fresh window, when the prompt never landed (owner, 8 Nov: "in case if send fails just try again"). */
 export async function askChat(prompt: string, timeoutMs = 120_000, image?: string) {
+  // Every request starts with its own id (10 Nov): agent prompts share long templated starts and ends, so a recovered
+  // "uncertain" send matched an older chat and took its reply. With a unique first line no two requests can match.
+  prompt = `Request ${crypto.randomUUID().slice(0, 8)}.
+
+${prompt}`;
   try { return await askChatOnce(prompt, timeoutMs, image); }
   catch (e) {
     if (!/composer not found|prompt not confirmed/i.test(String(e))) throw e;
