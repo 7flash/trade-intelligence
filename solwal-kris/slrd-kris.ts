@@ -316,6 +316,7 @@ async function watchSites() {
 /** Positions he opened that never managed one buy give their slot back. "remove" sells nothing, and there is nothing to sell. */
 /** A coin with no volume and no trade of ours for two hours is sold, whatever the cash: no range can make it trade. */
 async function closeDead() {
+  if (handsOff()) return; // hands-off: positions close only by hand
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string; symbol?: string | null; valueSol?: number | null }[] };
   // Sold-out ones too: they held a slot for hours (5Fis49, 8 Nov).
   const mine = s.bots.filter(b => b.wallet === s.agentWallet && !ownCoins().includes(b.mint)), vol = new Map<string, number>(), now = Date.now();
@@ -333,6 +334,7 @@ async function closeDead() {
   }
 }
 async function dropStuck() {
+  if (handsOff()) return; // hands-off: positions close only by hand
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; bots: { wallet: string; mint: string; symbol?: string | null; costSol?: number | null; valueSol?: number | null; amountRaw?: string | null; last?: string | null }[] };
   const own = readOwn(), now = Date.now();
   for (const b of s.bots.filter(x => x.wallet === s.agentWallet && !cantBuy().includes(x.mint) && neverBought(x, own[x.mint], now))) {
@@ -344,6 +346,7 @@ async function dropStuck() {
 /** Cash too low to open a position: sell out of the lowest-volume coin he opened, one at a time so the cash can arrive. */
 let lastClose = 0; const CASH_READY_SOL = 0.25; // 0.5 sold a coin every 2 minutes, and not quiet ones ($15k hour volume); opens run down to 0.2
 async function closeForCash() {
+  if (handsOff()) return; // hands-off: positions close only by hand
   if (Date.now() - lastClose < 60_000) return;
   const s = await (await fetch(`${BRIDGE}/api/state`, { headers: { "x-slrd-token": token }, signal: AbortSignal.timeout(10_000) })).json() as { agentWallet?: string | null; wallets?: { name: string; sol?: number | null }[]; bots: { wallet: string; mint: string; symbol?: string | null; valueSol?: number | null }[] };
   const cash = s.wallets?.find(w => w.name === s.agentWallet)?.sol; if (cash == null || cash >= CASH_READY_SOL) return; // he never stops opening: the quietest coin is sold ahead of time, so the next open never waits for a sale
@@ -370,7 +373,7 @@ async function shotOf(mint: string) {
 /** pump.fun posts a callout only with $2 of the coin held: with the low range the first buy is smaller, so the callout waits for the second. */
 let solUsdNow: number | null = null;
 const heldValue = new Map<string, number>(), CALLOUT_MIN_SOL = 0.013 /* pump.fun asks for $1 held (its own form says so), about 0.011 SOL at $90; a little above it */, calloutRetry = new Map<string, number>();
-const calloutSince = new Map<string, number>();
+const calloutSince = new Map<string, number>(), lastReadAsk = new Map<string, number>();
 function sendCallouts() {
   // The browser tours other coins only while no position waits for its read or callout (owner, 8 Nov).
   for (const m of wantCallout) if (!calloutSince.has(m)) calloutSince.set(m, Date.now());
@@ -381,7 +384,9 @@ function sendCallouts() {
     if (ownCoins().includes(mint)) { wantCallout.delete(mint); continue; }
     if (Date.now() - (pendingRead.get(mint) ?? 0) < 180_000) continue; // his read of it is on the way
     const read = events.find(e => e.mint === mint && e.kind === "browse" && (e.thought?.length ?? 0) >= 80) ?? events.find(e => e.mint === mint && e.kind === "position" && e.thought);
-    if (!read?.thought) continue;
+    // No usable read (it failed or was too short): ask the browser to read it again every 10 minutes instead of
+    // waiting forever (MELT and FLOATMINE waited 12 h, 9 Nov).
+    if (!read?.thought) { if (Date.now() - (lastReadAsk.get(mint) ?? 0) > 600_000) { lastReadAsk.set(mint, Date.now()); askRead(mint); } continue; }
     // What the coin is (X posts, its site) is looked up before every callout, not only for coins he chose: a coin
     // opened by hand (MARS, 8 Nov) went out with no story and the model said SKIP.
     if (!known.has(mint)) { wantCallout.delete(mint); void learnCoin(mint, read.symbol ?? mint.slice(0, 6)).finally(() => wantCallout.add(mint)); continue; }
