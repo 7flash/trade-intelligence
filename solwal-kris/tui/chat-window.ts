@@ -45,7 +45,7 @@ export async function askChat(prompt: string, timeoutMs = 120_000, image?: strin
 }
 /** A minimized pop-up window stopped rendering ChatGPT's composer after a Chrome restart (9 Nov: "composer not found"
  * on every send, while a normal tab worked). Tabs by default; CHATGPT_HIDDEN=1 brings the pop-up windows back. */
-const newArgs = () => process.env.CHATGPT_HIDDEN === "1" ? ["new", "--hidden"] : ["new"];
+const newArgs = () => process.env.CHATGPT_HIDDEN === "0" ? ["new"] : ["new", "--hidden"];
 async function askChatOnce(prompt: string, timeoutMs = 120_000, image?: string) {
   const file = (await bridge(...newArgs())).split("\n").pop()!, id = file.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, ""), askFile = resolve(import.meta.dir, "..", ".range-bots", "chat", `${id}.txt`), end = Date.now() + timeoutMs;
   let chat: string | null = null;
