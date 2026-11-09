@@ -23,9 +23,10 @@ export function boundChat(list: Row[]) {
 export const lastReply = (list: Row[]) => list.findLast(r => r.type === "message" && r.role === "assistant")?.text ?? null;
 
 /** The chat a prompt landed in, for closing its window when the send was never confirmed. Long messages show only their start. */
+/** Only the first 1,500 letters count: ChatGPT's page drops some text when it shows a message ("@solana/" vanished, 9 Nov). */
 export function chatOfPrompt(prompt: string, list: { name: string; rows: Row[] }[]) {
   const flat = (t: string) => t.replace(/[^\p{L}\p{N}]/gu, ""), sent = flat(prompt), shown = (r: Row) => flat((r.text ?? "").replace(/\s*\u2026\n[^\n]*$/, ""));
-  return list.find(c => c.rows.some(r => r.type === "message" && r.role === "user" && shown(r).length >= 200 && sent.startsWith(shown(r))))?.name ?? null;
+  return list.find(c => c.rows.some(r => r.type === "message" && r.role === "user" && shown(r).slice(0, 1_500).length >= 200 && sent.startsWith(shown(r).slice(0, 1_500))))?.name ?? null;
 }
 const recentChats = () => readdirSync(files).filter(f => /^[0-9a-f]{8}-.*\.jsonl$/.test(f)).map(f => ({ f, at: statSync(resolve(files, f)).mtimeMs })).sort((a, b) => b.at - a.at).slice(0, 30)
   .map(({ f }) => ({ name: f.replace(/\.jsonl$/, ""), rows: rows(resolve(files, f)) }));
