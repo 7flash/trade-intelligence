@@ -3,7 +3,7 @@
  *   new pair: 4 to 10 minutes old, past the first dump (149 tracked coins: median -19% in the first 5 minutes, -3% from
  *   5 to 10). migrated: migrated in the last 10, and sized larger (median +4% from 1 to 10 minutes).
  * A full side swaps its weakest coin only for one clearly better, so fees are not paid for noise. */
-export type SlotCoin = { mint: string; symbol?: string | null; capUsd?: number | null; trades?: number; traders?: number; seasoned?: number | null; smart?: number; volSol?: number; ageMs?: number | null; migrated?: boolean };
+export type SlotCoin = { mint: string; symbol?: string | null; capUsd?: number | null; trades?: number; traders?: number; seasoned?: number | null; smart?: number; volSol?: number; ageMs?: number | null; migrated?: boolean; dumpers?: number };
 export type SlotKind = "new" | "migrated";
 export type Slot = { mint: string; symbol: string | null; kind: SlotKind; openedAtMs: number; score: number; buy: number; sell: number };
 export type SlotAction = { type: "open"; kind: SlotKind; coin: SlotCoin; score: number; buy: number; sell: number; swap: boolean } | { type: "close"; slot: Slot; reason: string; forSwap: boolean };
@@ -18,7 +18,8 @@ export function slotScore(c: SlotCoin) {
   const traders = c.traders ?? 0, trades = c.trades ?? 0, seasoned = c.seasoned ?? traders;
   const spread = trades ? Math.min(1, (traders / trades) / 0.4) : 0;
   const real = traders ? Math.min(1, (seasoned / traders) / 0.3) : 0;
-  return (seasoned + (c.smart ?? 0) * 100) * spread * real;
+  // Wallets that dumped on our earlier coins (tui/dumpers.ts) take 30% off each, never below a fifth (owner, 10 Nov).
+  return (seasoned + (c.smart ?? 0) * 100) * spread * real * Math.max(0.2, 0.7 ** (c.dumpers ?? 0));
 }
 
 /** Worth holding at all. Limits follow the daemon's automatic entries where it has them. */

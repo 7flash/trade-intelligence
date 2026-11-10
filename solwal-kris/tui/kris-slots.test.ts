@@ -14,6 +14,7 @@ const plan = (o: Partial<Parameters<typeof planSlots>[0]>) => planSlots({ coins:
 test("churn scores below real spread", () => {
   expect(slotScore(coin("a", { traders: 17, trades: 165 }))).toBeLessThan(slotScore(coin("b")));
   expect(slotScore(coin("a", { smart: 2 }))).toBeGreaterThan(slotScore(coin("b")));
+  expect(slotScore(coin("a", { dumpers: 2 }))).toBeCloseTo(slotScore(coin("b")) * 0.49); // known dumpers lower the score
 });
 test("a new pair needs wallets, trades and a sane cap", () => {
   expect(slotQualifies(coin("a"), "new")).toBe(true);
