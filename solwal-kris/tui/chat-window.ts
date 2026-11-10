@@ -72,6 +72,9 @@ async function askChatOnce(prompt: string, timeoutMs = 120_000, image?: string) 
   } finally {
     rmSync(askFile, { force: true });
     await bridge("close", chat ?? id).catch(async () => { const found = chatOfPrompt(prompt, recentChats()); if (found) await bridge("close", found).catch(() => {}); });
+    // Also by the request's own reference: a close by chat id can miss the tab, and every open tab costs memory
+    // (10 Nov: 538 finished chat tabs piled up to 8.6 GB).
+    if (chat) await bridge("close", id).catch(() => {});
   }
 }
 /** A hidden window can lack its file picker; the thought still matters more than the picture. */
