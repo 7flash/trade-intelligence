@@ -78,6 +78,8 @@ const waiting: { ev: KrisEvent; facts: Record<string, unknown> }[] = []; let thi
 const thoughtAt = new Map<string, number>();
 function think(ev: KrisEvent, facts: Record<string, unknown>) {
   if (ev.kind === "trade" || ev.kind === "range") return; // the range decided: Recent trades already shows it
+  // Owner, 11 Nov: no model thoughts on reviews or closes; only the read, the analysis before a callout, and the callout. The title says the facts.
+  if (ev.kind === "review" || ev.kind === "result") { ev.thought ??= ev.title; save(); return; }
   if (ev.kind === "trade" && Date.now() - (thoughtAt.get(ev.mint) ?? 0) < 60_000) return; // one thought a minute per coin keeps Codex within its limit
   thoughtAt.set(ev.mint, Date.now());
   const minor = ev.kind === "coin" || ev.kind === "migrated";
