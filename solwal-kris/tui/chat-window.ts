@@ -5,7 +5,9 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync }
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 
-const BRIDGE = process.env.CHATGPT_BRIDGE ?? "C:/Code/chatgpt-bridge", POLL_MS = 1_000, MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const BRIDGE = process.env.CHATGPT_BRIDGE ?? "C:/Code/chatgpt-bridge", POLL_MS = 1_000,
+  // Agent pictures stay small; data handoffs (zips) may set CHAT_ATTACH_MAX_BYTES up to the bridge's 20 MB per file.
+  MAX_IMAGE_BYTES = Math.min(Number(process.env.CHAT_ATTACH_MAX_BYTES) || 4 * 1024 * 1024, 20 * 1024 * 1024);
 const files = resolve(process.env.CONVERSATIONS_ROOT ?? resolve(homedir(), ".conversations"), "conversations");
 type Row = { type?: string; role?: string; text?: string; status?: string; conversation?: string; error?: string };
 
